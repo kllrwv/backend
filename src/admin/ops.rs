@@ -1,21 +1,18 @@
+use super::{
+    CONFLICT, DENIED,
+    audit::{self, Undo},
+    mutate, panel_actor,
+};
+use crate::{
+    App, Result,
+    auth::{INVALID, UNAVAILABLE},
+};
 use axum::{Json, extract::State};
 use axum_extra::extract::CookieJar;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::PgConnection;
 use uuid::Uuid;
-
-use crate::{
-    App, Result,
-    auth::{INVALID, UNAVAILABLE},
-};
-
-use super::{
-    CONFLICT, DENIED,
-    audit::{self, Undo},
-    mutate, panel_actor,
-};
-
 const ENV_KEYS: &[&str] = &[
     "SMTP_HOST",
     "SMTP_PORT",
@@ -35,9 +32,7 @@ const ENV_KEYS: &[&str] = &[
     "S3_SECRET_ACCESS_KEY",
     "S3_SESSION_TOKEN",
 ];
-
 const SERVICES: &[&str] = &["all", "gateway", "web", "admin", "api", "postgres"];
-
 fn state(app: &App) -> Option<Value> {
     let path = app.0.admin.ops_dir.as_ref()?.join("state.json");
     let bytes = std::fs::read(path).ok()?;
@@ -49,7 +44,6 @@ fn state(app: &App) -> Option<Value> {
     let age = (time::OffsetDateTime::now_utc().unix_timestamp() - generated).abs();
     (age < 240).then_some(state)
 }
-
 pub async fn status(State(app): State<App>, jar: CookieJar) -> Result<Json<Value>> {
     let actor = panel_actor(&app, &jar, None).await?;
     let can_read = actor.allows("ops.read");
@@ -91,7 +85,6 @@ pub async fn status(State(app): State<App>, jar: CookieJar) -> Result<Json<Value
         "results":host.as_ref().map(|v| &v["results"]),"env":env,"jobs":jobs}),
     ))
 }
-
 async fn account_metrics(app: &App) -> Result<(Value, Value, Value)> {
     let summary:Value=sqlx::query_scalar(
         "SELECT jsonb_build_object('total',count(*) FILTER(WHERE deleted_at IS NULL),
@@ -125,7 +118,6 @@ async fn account_metrics(app: &App) -> Result<(Value, Value, Value)> {
     ).fetch_one(&app.0.db).await?;
     Ok((summary, json!(countries), storage))
 }
-
 #[derive(Deserialize)]
 pub struct Restart {
     service: String,
@@ -162,7 +154,6 @@ pub async fn restart(
     tx.commit().await?;
     Ok(Json(job))
 }
-
 #[derive(Deserialize)]
 pub struct Environment {
     key: String,
@@ -206,7 +197,6 @@ pub async fn environment(
     tx.commit().await?;
     Ok(Json(job))
 }
-
 pub async fn queue_env_undo(
     app: &App,
     db: &mut PgConnection,
@@ -227,7 +217,6 @@ pub async fn queue_env_undo(
     .await?;
     Ok(())
 }
-
 async fn queue(app: &App, db: &mut PgConnection, payload: Value) -> Result<Uuid> {
     let id = Uuid::new_v4();
     let payload = app.0.contacts.seal_admin_event(id, &payload.to_string())?;
@@ -238,7 +227,6 @@ async fn queue(app: &App, db: &mut PgConnection, payload: Value) -> Result<Uuid>
         .await?;
     Ok(id)
 }
-
 pub async fn dispatch(app: App) {
     let Some(folder) = app.0.admin.ops_dir.as_ref().map(|p| p.join("inbox")) else {
         return;

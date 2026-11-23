@@ -3,9 +3,8 @@ mod audit;
 mod audit_message;
 mod moderation;
 mod ops;
-
-use std::{env, path::PathBuf};
-
+use crate::{ApiError, App, Result, auth, profile};
+pub(crate) use audit::deliver_audit;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
@@ -14,15 +13,11 @@ use axum::{
     routing::{get, post},
 };
 use axum_extra::extract::CookieJar;
+pub(crate) use ops::dispatch;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
+use std::{env, path::PathBuf};
 use uuid::Uuid;
-
-use crate::{ApiError, App, Result, auth, profile};
-
-pub(crate) use audit::deliver_audit;
-pub(crate) use ops::dispatch;
-
 pub const PERMISSIONS: &[&str] = &[
     "accounts.read",
     "accounts.review.create",
@@ -45,13 +40,11 @@ pub const PERMISSIONS: &[&str] = &[
     "audit.read",
     "audit.undo",
 ];
-
 const ADMIN_COOKIE: &str = "kw_admin";
 const DENIED: ApiError = ApiError(StatusCode::FORBIDDEN, "admin_denied");
 const SIGN_IN: ApiError = ApiError(StatusCode::UNAUTHORIZED, "sign_in_required");
 const CONFLICT: ApiError = ApiError(StatusCode::CONFLICT, "admin_conflict");
 const MISSING: ApiError = ApiError(StatusCode::NOT_FOUND, "admin_missing");
-
 #[derive(Default)]
 pub struct Settings {
     pub origin: Option<String>,
@@ -59,7 +52,6 @@ pub struct Settings {
     audit_chat: Option<i64>,
     ops_dir: Option<PathBuf>,
 }
-
 impl Settings {
     #[cfg(test)]
     pub fn for_test() -> Self {
@@ -100,7 +92,6 @@ impl Settings {
         })
     }
 }
-
 pub async fn bootstrap(app: &App) -> anyhow::Result<()> {
     if let Some(id) = app.0.admin.bootstrap {
         sqlx::query(
@@ -116,7 +107,6 @@ pub async fn bootstrap(app: &App) -> anyhow::Result<()> {
     }
     Ok(())
 }
-
 #[derive(Clone, Serialize, sqlx::FromRow)]
 pub struct Actor {
     id: Uuid,
@@ -124,12 +114,10 @@ pub struct Actor {
     owner: bool,
     permissions: Vec<String>,
 }
-
 impl Actor {
     pub fn allows(&self, permission: &str) -> bool {
         self.owner || self.permissions.iter().any(|v| v == permission)
     }
-
     fn require(&self, permission: &str) -> Result<()> {
         if self.allows(permission) {
             Ok(())
@@ -138,7 +126,6 @@ impl Actor {
         }
     }
 }
-
 async fn current_role(db: &mut PgConnection, id: Uuid) -> Result<Actor> {
     sqlx::query_as(
         "SELECT a.id,coalesce(a.username,a.id::text) AS name,r.owner,r.permissions
@@ -151,7 +138,6 @@ async fn current_role(db: &mut PgConnection, id: Uuid) -> Result<Actor> {
     .await?
     .ok_or(DENIED)
 }
-
 async fn allows_target(db: &mut PgConnection, actor: &Actor, target: Uuid) -> Result<()> {
     let privileges: Option<(bool, Vec<String>)> =
         sqlx::query_as("SELECT owner, permissions FROM admin_roles WHERE account_id=$1")
@@ -165,7 +151,6 @@ async fn allows_target(db: &mut PgConnection, actor: &Actor, target: Uuid) -> Re
     }
     Ok(())
 }
-
 async fn mutate(
     pool: &PgPool,
     actor: &Actor,
@@ -179,7 +164,6 @@ async fn mutate(
     actor.require(permit)?;
     Ok((tx, actor))
 }
-
 async fn panel_actor(app: &App, jar: &CookieJar, permission: Option<&str>) -> Result<Actor> {
     let cookie = jar.get(ADMIN_COOKIE).ok_or(SIGN_IN)?;
     let mut db = app.0.db.acquire().await?;
@@ -197,14 +181,12 @@ async fn panel_actor(app: &App, jar: &CookieJar, permission: Option<&str>) -> Re
     }
     Ok(actor)
 }
-
 #[derive(Serialize)]
 struct Access {
     origin: Option<String>,
     moderate: bool,
     manage_accounts: bool,
 }
-
 async fn access(State(app): State<App>, jar: CookieJar) -> Result<Json<Access>> {
     let viewer = profile::completed(&app, &jar).await?;
     let mut db = app.0.db.acquire().await?;
@@ -222,7 +204,6 @@ async fn access(State(app): State<App>, jar: CookieJar) -> Result<Json<Access>> 
             .is_some_and(|a| a.allows("accounts.lifecycle")),
     }))
 }
-
 async fn start(State(app): State<App>, jar: CookieJar) -> Result<Redirect> {
     let origin = app.0.admin.origin.as_ref().ok_or(MISSING)?;
     let viewer = profile::completed(&app, &jar).await?;
@@ -243,12 +224,10 @@ async fn start(State(app): State<App>, jar: CookieJar) -> Result<Redirect> {
     };
     Ok(Redirect::to(&format!("{origin}{path}?ticket={ticket}")))
 }
-
 #[derive(Deserialize)]
 struct Ticket {
     ticket: String,
 }
-
 async fn claim(
     State(app): State<App>,
     jar: CookieJar,
@@ -279,11 +258,9 @@ async fn claim(
         Json(actor),
     ))
 }
-
 async fn whoami(State(app): State<App>, jar: CookieJar) -> Result<Json<Actor>> {
     Ok(Json(panel_actor(&app, &jar, None).await?))
 }
-
 pub fn routes() -> Router<App> {
     Router::new()
         .route("/api/mod/access", get(access))

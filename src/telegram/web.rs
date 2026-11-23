@@ -1,5 +1,11 @@
-use std::{env, io::Read, time::Duration};
-
+use crate::{
+    ApiError, App, Result,
+    auth::{
+        EXPIRED, FlowView, Lang, Mode, UNAVAILABLE, begin_login_flow, clear, code_matches,
+        confirm_telegram_registration, cookie, create_session, digest, key, pending_registration,
+        rate, token,
+    },
+};
 use axum::{
     Json,
     extract::State,
@@ -13,29 +19,18 @@ use ring::signature::{
     ECDSA_P256_SHA256_FIXED, RSA_PKCS1_2048_8192_SHA256, RsaPublicKeyComponents, UnparsedPublicKey,
 };
 use serde::{Deserialize, Serialize};
+use std::{env, io::Read, time::Duration};
 use uuid::Uuid;
-
-use crate::{
-    ApiError, App, Result,
-    auth::{
-        EXPIRED, FlowView, Lang, Mode, UNAVAILABLE, begin_login_flow, clear, code_matches,
-        confirm_telegram_registration, cookie, create_session, digest, key, pending_registration,
-        rate, token,
-    },
-};
-
 const ISSUER: &str = "https://oauth.telegram.org";
 const JWKS_URL: &str = "https://oauth.telegram.org/.well-known/jwks.json";
 const FLOW_COOKIE: &str = "kw_telegram_popup";
 const FLOW_SECONDS: i64 = 600;
 const NOT_CONFIGURED: ApiError = ApiError(StatusCode::SERVICE_UNAVAILABLE, "bot_unavailable");
 const FAILED: ApiError = ApiError(StatusCode::UNAUTHORIZED, "telegram_failed");
-
 pub struct Provider {
     client_id: u64,
     http: Client,
 }
-
 impl Provider {
     pub fn from_env() -> anyhow::Result<Option<Self>> {
         let client_id = env::var("TELEGRAM_LOGIN_CLIENT_ID").unwrap_or_default();
@@ -54,7 +49,6 @@ impl Provider {
             .build()?;
         Ok(Some(Self { client_id, http }))
     }
-
     async fn telegram_id(&self, id_token: &str, nonce: &str) -> Result<i64> {
         let response = self
             .http
@@ -86,7 +80,6 @@ impl Provider {
         })
     }
 }
-
 fn decode_keys(body: &[u8], gzip: bool) -> serde_json::Result<KeySet> {
     if gzip {
         serde_json::from_reader(GzDecoder::new(body).take(64 * 1024))
@@ -94,24 +87,19 @@ fn decode_keys(body: &[u8], gzip: bool) -> serde_json::Result<KeySet> {
         serde_json::from_slice(body)
     }
 }
-
 fn log_key_request_error(error: reqwest::Error) -> ApiError {
-    // This request uses the public JWKS URL and carries no login credentials.
     eprintln!("telegram public key request failed: {error:?}");
     UNAVAILABLE
 }
-
 #[derive(Deserialize)]
 pub struct StartRequest {
     mode: Mode,
 }
-
 #[derive(Serialize)]
 pub struct Start {
     client_id: u64,
     nonce: String,
 }
-
 pub async fn start(
     State(app): State<App>,
     jar: CookieJar,
@@ -144,7 +132,6 @@ pub async fn start(
         }),
     ))
 }
-
 pub async fn cancel(app: &App, jar: CookieJar) -> Result<CookieJar> {
     if let Some(flow) = jar.get(FLOW_COOKIE) {
         sqlx::query("DELETE FROM telegram_web_flows WHERE browser_key=$1")
@@ -154,18 +141,15 @@ pub async fn cancel(app: &App, jar: CookieJar) -> Result<CookieJar> {
     }
     Ok(clear(app, jar, FLOW_COOKIE))
 }
-
 #[derive(Deserialize)]
 pub struct Confirmation {
     id_token: String,
     lang: Option<Lang>,
 }
-
 #[derive(Serialize)]
 pub struct Confirmed {
     flow: Option<FlowView>,
 }
-
 pub async fn confirm(
     State(app): State<App>,
     jar: CookieJar,
@@ -185,7 +169,6 @@ pub async fn confirm(
     .ok_or(EXPIRED)?;
     let id = provider.telegram_id(&input.id_token, &nonce).await?;
     let jar = clear(&app, jar, FLOW_COOKIE);
-
     if let Some(registration) = registration {
         let flow = confirm_telegram_registration(&app, &jar, &registration, id).await?;
         return Ok((jar, Json(Confirmed { flow: Some(flow) })));
@@ -217,12 +200,10 @@ pub async fn confirm(
     tx.commit().await?;
     Ok((session, Json(Confirmed { flow: None })))
 }
-
 #[derive(Deserialize)]
 struct KeySet {
     keys: Vec<SigningKey>,
 }
-
 #[derive(Deserialize)]
 struct SigningKey {
     kid: Option<String>,
@@ -236,7 +217,6 @@ struct SigningKey {
     x: Option<String>,
     y: Option<String>,
 }
-
 #[derive(Deserialize)]
 struct TokenHeader {
     alg: String,
@@ -244,21 +224,18 @@ struct TokenHeader {
     crit: Option<serde_json::Value>,
     b64: Option<bool>,
 }
-
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum Audience {
     One(Identifier),
     List(Vec<Identifier>),
 }
-
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum Identifier {
     Text(String),
     Number(u64),
 }
-
 impl Identifier {
     fn number(&self) -> Option<u64> {
         match self {
@@ -267,7 +244,6 @@ impl Identifier {
             Self::Text(_) => None,
         }
     }
-
     fn matches(&self, expected: u64) -> bool {
         match self {
             Self::Text(text) => text == &expected.to_string(),
@@ -275,7 +251,6 @@ impl Identifier {
         }
     }
 }
-
 #[derive(Deserialize)]
 struct Claims {
     iss: String,
@@ -288,7 +263,6 @@ struct Claims {
     nbf: Option<i64>,
     azp: Option<Identifier>,
 }
-
 #[derive(Debug, PartialEq, Eq)]
 enum TokenRejection {
     Encoding,
@@ -303,7 +277,6 @@ enum TokenRejection {
     TelegramId,
     Time,
 }
-
 fn verify_signature(
     header: &TokenHeader,
     keys: KeySet,
@@ -348,7 +321,6 @@ fn verify_signature(
     }
     .map_err(|_| Signature)
 }
-
 fn telegram_id_from_token(
     token: &str,
     keys: KeySet,
@@ -396,15 +368,11 @@ fn telegram_id_from_token(
         .map(|id| id as i64)
         .ok_or(TokenRejection::TelegramId)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Signed with a disposable test key; only its public component is used here.
     const SAMPLE_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImZpeHR1cmUifQ.eyJpc3MiOiJodHRwczovL29hdXRoLnRlbGVncmFtLm9yZyIsImF1ZCI6IjEyMzQ1Iiwic3ViIjoib3BhcXVlLWZpeHR1cmUiLCJub25jZSI6InRlc3Qtbm9uY2UiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMzYwMCwiaWQiOjk4NzY1NDMyMX0.27SMqtqsv4X6hXdnAwa8CL2zKtNQf8aksVS0iQXajzJibEeIi2SZE8dTOzCulIygmNX7Y-XKZw0NyPZ0ft3iPqPZq522E-MqCCb1APcX7mar9jyxPofH2LjKaE4hfyUDNlpnpKf31HVC7EmAaUgEGSPfRB5kA_HzUdLO9mrSscCWep0xewxLBye6sA2yARGUp7IkOqAInu6ezn_IJkyCMUmrvfWm1BHAEDVoTFX0qkslQp4npkyoPYhbbK45Au9TV8Pc427xvk642KFOsGIqSafJE7HHvDnQsnqgGz87zzemvz-wB615HJmtWcP1Y8sRzEPh6d-R1bNVc-mLydEPyw";
     const SAMPLE_KEYS: &str = r#"{"keys":[{"kty":"RSA","alg":"RS256","use":"sig","kid":"fixture","n":"6X7MQ7FZVePsAV_3NCCLrV8DcQRZOFylWRMENNg7uI-B1swsArz0xYCPeueR2h6m1L7jdYcd_dozSc5LaoQknft_zfbarYdnwCCl_pui2zNeXtA36DB8k70_4T1awp_Q10sKFHZyy3air-qOt-s8CqlmHHVn2fpMHCbbY-nKK9jq03WX4n9izeLV8naJPA8kI7yJ7ymUF79FK7l7PYKcHq6uvgERJwNwBku48KLCkILAG3IQWGOcIC6-UPSywAS8vXEDyeb7QT5ECXcOflBwTum0HXwp6Yrf2Fmi8Wffi6yMshwEH8IZWQtF7Av2MaUKom51HKTCcuDrvgWKQDL8cw","e":"AQAB"}]}"#;
-
     #[test]
     fn checks_telegram_signature_audience_expiry_and_popup_nonce() {
         let verify = |token, client, nonce, now| {
@@ -432,7 +400,6 @@ mod tests {
             verify(SAMPLE_TOKEN, 12345, "test-nonce", 1_700_003_600),
             Err(TokenRejection::Time)
         );
-
         let (signed, signature) = SAMPLE_TOKEN.rsplit_once('.').unwrap();
         let (header, payload) = signed.split_once('.').unwrap();
         let mut claims: serde_json::Value =
@@ -449,7 +416,6 @@ mod tests {
             Err(TokenRejection::Signature)
         );
     }
-
     #[test]
     fn verifies_es256_and_normalizes_telegram_identifiers() {
         use ring::{
@@ -457,7 +423,6 @@ mod tests {
             signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair},
         };
         use serde_json::json;
-
         let rng = SystemRandom::new();
         let algorithm = &ECDSA_P256_SHA256_FIXED_SIGNING;
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(algorithm, &rng).unwrap();
@@ -495,12 +460,10 @@ mod tests {
         claims["id"] = json!(null);
         assert_eq!(verify(&claims), Err(TokenRejection::TelegramId));
     }
-
     #[test]
     fn verifies_tokens_using_a_gzipped_telegram_key_set() {
         use flate2::{Compression, write::GzEncoder};
         use std::io::Write;
-
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(SAMPLE_KEYS.as_bytes()).unwrap();
         let compressed = encoder.finish().unwrap();

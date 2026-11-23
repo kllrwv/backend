@@ -1,3 +1,9 @@
+use super::security;
+use crate::{
+    ApiError, App, Result,
+    auth::{self, EXPIRED, INVALID, UNAVAILABLE},
+    profile,
+};
 use axum::{Json, extract::State, http::StatusCode};
 use axum_extra::extract::CookieJar;
 use data_encoding::{BASE32_NOPAD, HEXUPPER};
@@ -6,21 +12,11 @@ use ring::hmac;
 use serde::{Deserialize, Serialize};
 use sqlx::PgConnection;
 use uuid::Uuid;
-
-use crate::{
-    ApiError, App, Result,
-    auth::{self, EXPIRED, INVALID, UNAVAILABLE},
-    profile,
-};
-
-use super::security;
-
 const ENABLED: ApiError = ApiError(StatusCode::CONFLICT, "totp_enabled");
 const DISABLED: ApiError = ApiError(StatusCode::CONFLICT, "totp_disabled");
 const WRONG_CODE: ApiError = ApiError(StatusCode::BAD_REQUEST, "totp_wrong");
 const WRONG_RECOVERY: ApiError = ApiError(StatusCode::BAD_REQUEST, "recovery_wrong");
 const PASSWORD_CHANGED: ApiError = ApiError(StatusCode::UNAUTHORIZED, "credentials");
-
 #[derive(sqlx::FromRow)]
 pub struct Account {
     pub generation: Option<Uuid>,
@@ -30,7 +26,6 @@ pub struct Account {
     pub review_account: bool,
     username: Option<String>,
 }
-
 pub async fn lock_account(db: &mut PgConnection, account: Uuid) -> Result<Account> {
     sqlx::query_as(
         "SELECT totp_generation AS generation, totp_secret AS secret, totp_last_step AS last_step,
@@ -41,19 +36,16 @@ pub async fn lock_account(db: &mut PgConnection, account: Uuid) -> Result<Accoun
     .await?
     .ok_or(EXPIRED)
 }
-
 #[derive(Deserialize)]
 pub struct Password {
     password: String,
 }
-
 #[derive(Serialize)]
 pub struct Setup {
     generation: Uuid,
     secret: String,
     uri: String,
 }
-
 pub async fn start(
     State(app): State<App>,
     jar: CookieJar,
@@ -107,12 +99,10 @@ pub async fn start(
         uri: uri.into(),
     }))
 }
-
 #[derive(Deserialize)]
 pub struct Enrollment {
     generation: Uuid,
 }
-
 pub async fn cancel(
     State(app): State<App>,
     jar: CookieJar,
@@ -129,18 +119,15 @@ pub async fn cancel(
     .await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 #[derive(Deserialize)]
 pub struct Confirmation {
     generation: Uuid,
     code: String,
 }
-
 #[derive(Serialize)]
 pub struct Recovery {
     recovery_codes: Vec<String>,
 }
-
 pub async fn confirm(
     State(app): State<App>,
     jar: CookieJar,
@@ -209,21 +196,18 @@ pub async fn confirm(
         recovery_codes: codes,
     }))
 }
-
 #[derive(Deserialize)]
 pub struct Proof {
     code: String,
     #[serde(default)]
     recovery: bool,
 }
-
 #[derive(Deserialize)]
 pub struct Disable {
     password: String,
     #[serde(flatten)]
     proof: Proof,
 }
-
 pub async fn disable(
     State(app): State<App>,
     jar: CookieJar,
@@ -253,12 +237,9 @@ pub async fn disable(
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 pub async fn limit(app: &App, account: Uuid) -> Result<()> {
     auth::rate(app, &format!("totp-proof:{account}"), 10, 300).await
 }
-
-// Call under the account row lock, in the transaction that consumes the proof.
 pub async fn check(
     app: &App,
     db: &mut PgConnection,
@@ -293,7 +274,6 @@ pub async fn check(
         .await?;
     Ok(false)
 }
-
 pub async fn disconnect(db: &mut PgConnection, account: Uuid, keep: Option<&str>) -> Result<()> {
     sqlx::query(
         "UPDATE accounts SET totp_generation=NULL,totp_secret=NULL,totp_last_step=NULL WHERE id=$1",
@@ -311,7 +291,6 @@ pub async fn disconnect(db: &mut PgConnection, account: Uuid, keep: Option<&str>
         .await?;
     revoke_other_sessions(db, account, keep).await
 }
-
 async fn revoke_other_sessions(
     db: &mut PgConnection,
     account: Uuid,
@@ -324,11 +303,9 @@ async fn revoke_other_sessions(
         .await?;
     Ok(())
 }
-
 fn recovery_fingerprint(app: &App, account: Uuid, code: &str) -> String {
     auth::key(app, &format!("totp recovery:{account}"), code)
 }
-
 fn normalize_recovery(value: &str) -> Option<String> {
     if value.len() > 80 || !value.is_ascii() {
         return None;
@@ -340,7 +317,6 @@ fn normalize_recovery(value: &str) -> Option<String> {
     (normalized.len() == 32 && normalized.bytes().all(|c| c.is_ascii_hexdigit()))
         .then(|| normalized.to_ascii_uppercase())
 }
-
 fn verified_step(secret: &str, code: &str, last: Option<i64>) -> Result<i64> {
     if !auth::six_digits(code) {
         return Err(WRONG_CODE);
@@ -349,7 +325,6 @@ fn verified_step(secret: &str, code: &str, last: Option<i64>) -> Result<i64> {
         .decode(secret.as_bytes())
         .map_err(|_| UNAVAILABLE)?;
     let now = time::OffsetDateTime::now_utc().unix_timestamp() / 30;
-    // Check the current step first and allow a one-step clock difference.
     [now, now - 1, now + 1]
         .into_iter()
         .find(|&step| {
@@ -359,7 +334,6 @@ fn verified_step(secret: &str, code: &str, last: Option<i64>) -> Result<i64> {
         })
         .ok_or(WRONG_CODE)
 }
-
 fn totp_code(secret: &[u8], counter: u64) -> String {
     let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, secret);
     let digest = hmac::sign(&key, &counter.to_be_bytes());
@@ -371,11 +345,9 @@ fn totp_code(secret: &[u8], counter: u64) -> String {
     let number = u32::from_be_bytes(slice) & 0x7fff_ffff;
     format!("{:06}", number % 1_000_000)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn matches_rfc_6238_sha1_vectors_with_six_digits() {
         for (time, expected) in [

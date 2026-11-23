@@ -1,25 +1,18 @@
-use std::collections::HashMap;
-
+use super::audit::Undo;
+use crate::{App, Result, locale::AdminAudit};
 use serde_json::Value;
 use sqlx::PgConnection;
+use std::collections::HashMap;
 use uuid::Uuid;
-
-use crate::{App, Result, locale::AdminAudit};
-
-use super::audit::Undo;
-
 pub fn label<'a>(labels: &'a HashMap<String, String>, key: &str, fallback: &'a str) -> &'a str {
     labels.get(key).map(String::as_str).unwrap_or(fallback)
 }
-
 pub fn action_label<'a>(t: &'a AdminAudit, action: &str) -> &'a str {
     label(&t.actions, action, &t.unknown)
 }
-
 fn line(lines: &mut Vec<String>, name: &str, value: impl std::fmt::Display) {
     lines.push(format!("{name}: {value}"));
 }
-
 fn short_text(value: &str) -> String {
     let safe = value
         .chars()
@@ -33,7 +26,6 @@ fn short_text(value: &str) -> String {
     }
     result
 }
-
 pub fn limit_message(message: &str) -> String {
     if message.encode_utf16().count() <= 4096 {
         return message.to_owned();
@@ -52,7 +44,6 @@ pub fn limit_message(message: &str) -> String {
     result.push('…');
     result
 }
-
 fn value(t: &AdminAudit, field: &str, entry: &Value) -> String {
     match entry {
         Value::Bool(enabled) => {
@@ -67,7 +58,6 @@ fn value(t: &AdminAudit, field: &str, entry: &Value) -> String {
         _ => label(&t.values, "empty", "—").into(),
     }
 }
-
 fn permissions(t: &AdminAudit, list: &Value, other: &Value) -> String {
     list.as_array()
         .into_iter()
@@ -82,7 +72,6 @@ fn permissions(t: &AdminAudit, list: &Value, other: &Value) -> String {
         .collect::<Vec<_>>()
         .join(", ")
 }
-
 fn differences(
     t: &AdminAudit,
     lines: &mut Vec<String>,
@@ -188,13 +177,11 @@ fn differences(
         }
     }
 }
-
 fn outcome(t: &AdminAudit, lines: &mut Vec<String>, key: &str) {
     if let Some(message) = t.messages.get(key) {
         lines.push(message.to_owned());
     }
 }
-
 pub async fn describe(
     db: &mut PgConnection,
     app: &App,
@@ -218,7 +205,6 @@ pub async fn describe(
     let mut part = details["part"].as_i64();
     let mut reason = None;
     let report: Option<(String, Uuid, i16, String)>;
-
     if let Some(report_id) = target.filter(|_| action == "report_review") {
         line(&mut lines, label(&t.fields, "report", &t.target), report_id);
         report =
@@ -235,7 +221,6 @@ pub async fn describe(
             object_id = None;
         }
     }
-
     if let Some(id) = object_id {
         match action {
             "restart" | "env" => line(&mut lines, label(&t.fields, "job", &t.target), id),
@@ -284,7 +269,6 @@ pub async fn describe(
             label(&t.values, reason, reason),
         );
     }
-
     differences(t, &mut lines, action, undo, reversed);
     match action {
         "remove" => outcome(

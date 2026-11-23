@@ -1,7 +1,7 @@
 pub(crate) mod contacts;
 pub(crate) mod security;
 pub(crate) mod totp;
-
+use crate::{ApiError, App, Result};
 use argon2::{
     Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
     password_hash::{SaltString, rand_core::OsRng as PasswordRng},
@@ -23,9 +23,6 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
-
-use crate::{ApiError, App, Result};
-
 pub const INVALID: ApiError = ApiError(StatusCode::BAD_REQUEST, "invalid");
 pub const EXPIRED: ApiError = ApiError(StatusCode::GONE, "expired");
 pub const UNAVAILABLE: ApiError = ApiError(StatusCode::SERVICE_UNAVAILABLE, "unavailable");
@@ -33,14 +30,12 @@ pub const RATE: ApiError = ApiError(StatusCode::TOO_MANY_REQUESTS, "rate");
 pub const SESSION: &str = "kw_session";
 const FLOW: &str = "kw_flow";
 pub const FLOW_MINUTES: i64 = 15;
-
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Lang {
     Ru,
     En,
 }
-
 impl Lang {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -49,7 +44,6 @@ impl Lang {
         }
     }
 }
-
 #[derive(Serialize)]
 pub struct FlowView {
     kind: String,
@@ -58,7 +52,6 @@ pub struct FlowView {
     bot_url: Option<String>,
     bot_code: Option<String>,
 }
-
 #[derive(sqlx::FromRow)]
 struct FlowInfo {
     kind: String,
@@ -68,20 +61,17 @@ struct FlowInfo {
     bot_ready: bool,
     bot_needs_code: bool,
 }
-
 #[derive(Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     Login,
     Register,
 }
-
 #[derive(Deserialize)]
 pub struct BotStart {
     mode: Mode,
     lang: Lang,
 }
-
 #[derive(Deserialize)]
 pub struct Register {
     email: String,
@@ -89,29 +79,24 @@ pub struct Register {
     confirmation: String,
     lang: Lang,
 }
-
 #[derive(Deserialize)]
 pub struct Login {
     login: String,
     password: String,
     lang: Lang,
 }
-
 #[derive(Deserialize)]
 pub struct Code {
     code: String,
 }
-
 pub(crate) fn token() -> String {
     let mut bytes = [0; 32];
     OsRng.fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
-
 pub fn digest(data: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(data.as_bytes()))
 }
-
 pub fn keyed(app: &App, purpose: &str, value: &str) -> [u8; 32] {
     let mut mac = Hmac::<Sha256>::new_from_slice(app.0.secret.as_bytes()).expect("valid hmac key");
     mac.update(purpose.as_bytes());
@@ -119,19 +104,15 @@ pub fn keyed(app: &App, purpose: &str, value: &str) -> [u8; 32] {
     mac.update(value.as_bytes());
     mac.finalize().into_bytes().into()
 }
-
 pub fn key(app: &App, purpose: &str, value: &str) -> String {
     URL_SAFE_NO_PAD.encode(keyed(app, purpose, value))
 }
-
 pub fn code_matches(actual: &str, expected: Option<&str>) -> bool {
     expected.is_some_and(|value| bool::from(actual.as_bytes().ct_eq(value.as_bytes())))
 }
-
 pub fn six_digits(code: &str) -> bool {
     code.len() == 6 && code.bytes().all(|byte| byte.is_ascii_digit())
 }
-
 pub(crate) fn cookie(
     app: &App,
     name: &'static str,
@@ -146,17 +127,14 @@ pub(crate) fn cookie(
         .max_age(time::Duration::seconds(seconds))
         .build()
 }
-
 pub(crate) fn clear(app: &App, jar: CookieJar, name: &'static str) -> CookieJar {
     jar.remove(cookie(app, name, String::new(), 0))
 }
-
 pub fn hash_password(password: &[u8]) -> std::result::Result<String, argon2::password_hash::Error> {
     Ok(Argon2::default()
         .hash_password(password, &SaltString::generate(&mut PasswordRng))?
         .to_string())
 }
-
 pub(crate) async fn rate(app: &App, id: &str, maximum: i32, seconds: i64) -> Result<()> {
     let hits: i32 = sqlx::query_scalar(
         "INSERT INTO rate_limits(id, hits, expires_at) VALUES($1, 1, now() + $2 * interval '1 second')
@@ -170,7 +148,6 @@ pub(crate) async fn rate(app: &App, id: &str, maximum: i32, seconds: i64) -> Res
     }
     Ok(())
 }
-
 pub(crate) fn checked_email(input: &str) -> Result<String> {
     let email = input.trim().to_ascii_lowercase();
     if email.len() > 254
@@ -182,7 +159,6 @@ pub(crate) fn checked_email(input: &str) -> Result<String> {
     }
     Ok(email)
 }
-
 pub fn username(value: &str) -> Option<String> {
     let count = value.chars().count();
     if !(3..=54).contains(&count) || !value.chars().all(|ch| {
@@ -194,7 +170,6 @@ pub fn username(value: &str) -> Option<String> {
     }
     Some(value.to_lowercase())
 }
-
 pub async fn register(
     State(app): State<App>,
     jar: CookieJar,
@@ -238,7 +213,6 @@ pub async fn register(
     };
     begin_email(&app, jar, attempt).await
 }
-
 pub async fn login(
     State(app): State<App>,
     jar: CookieJar,
@@ -314,7 +288,6 @@ pub async fn login(
     };
     begin_email(&app, jar, attempt).await
 }
-
 pub(crate) async fn begin_login_flow(
     app: &App,
     db: &mut sqlx::PgConnection,
@@ -358,7 +331,6 @@ pub(crate) async fn begin_login_flow(
         },
     ))
 }
-
 pub async fn verify_totp(
     State(app): State<App>,
     jar: CookieJar,
@@ -396,7 +368,6 @@ pub async fn verify_totp(
     tx.commit().await?;
     Ok((jar, StatusCode::NO_CONTENT))
 }
-
 struct EmailAttempt {
     kind: &'static str,
     email: String,
@@ -404,7 +375,6 @@ struct EmailAttempt {
     password_hash: Option<String>,
     account_id: Option<Uuid>,
 }
-
 async fn begin_email(
     app: &App,
     jar: CookieJar,
@@ -422,7 +392,6 @@ async fn begin_email(
         .bind(attempt.password_hash).bind(attempt.account_id)
         .bind(key(app, &id, &code)).bind(FLOW_MINUTES)
         .execute(&app.0.db).await?;
-
     if send_email(app, &attempt.email, &code, attempt.lang)
         .await
         .is_err()
@@ -451,7 +420,6 @@ async fn begin_email(
         Json(view),
     ))
 }
-
 pub(crate) async fn send_email(app: &App, email: &str, code: &str, lang: Lang) -> Result<()> {
     let copy = &app.0.translations.get(lang.as_str()).email;
     let body = copy
@@ -475,7 +443,6 @@ pub(crate) async fn send_email(app: &App, email: &str, code: &str, lang: Lang) -
     })?;
     Ok(())
 }
-
 fn flow_view(app: &App, ticket: &str, flow: FlowInfo) -> Result<FlowView> {
     let bot = app
         .0
@@ -505,12 +472,10 @@ fn flow_view(app: &App, ticket: &str, flow: FlowInfo) -> Result<FlowView> {
         }),
     })
 }
-
 fn mask_email(email: &str) -> String {
     let (name, domain) = email.rsplit_once('@').unwrap_or(("", ""));
     format!("{}•••@{domain}", name.chars().next().unwrap_or('•'))
 }
-
 pub async fn current_flow(app: &App, jar: &CookieJar) -> Result<Option<FlowView>> {
     let Some(ticket) = jar.get(FLOW).map(|cookie| cookie.value()) else {
         return Ok(None);
@@ -523,7 +488,6 @@ pub async fn current_flow(app: &App, jar: &CookieJar) -> Result<Option<FlowView>
     .await?;
     flow.map(|flow| flow_view(app, ticket, flow)).transpose()
 }
-
 #[derive(sqlx::FromRow)]
 struct EmailChallenge {
     #[sqlx(flatten)]
@@ -531,7 +495,6 @@ struct EmailChallenge {
     email_code: Option<String>,
     email_attempts: i16,
 }
-
 pub async fn verify_email(
     State(app): State<App>,
     jar: CookieJar,
@@ -588,7 +551,6 @@ pub async fn verify_email(
     flow.bot_needs_code = false;
     Ok(Json(flow_view(&app, ticket, flow)?))
 }
-
 pub(crate) async fn pending_registration(app: &App, jar: &CookieJar) -> Result<String> {
     let id = digest(jar.get(FLOW).ok_or(EXPIRED)?.value());
     let pending: bool = sqlx::query_scalar(
@@ -603,7 +565,6 @@ pub(crate) async fn pending_registration(app: &App, jar: &CookieJar) -> Result<S
     }
     Ok(id)
 }
-
 pub(crate) async fn confirm_telegram_registration(
     app: &App,
     jar: &CookieJar,
@@ -629,13 +590,11 @@ pub(crate) async fn confirm_telegram_registration(
     .ok_or(EXPIRED)?;
     flow_view(app, ticket, flow)
 }
-
 fn bot_code(app: &App, ticket: &str) -> String {
     let hash = keyed(app, "telegram bot code", ticket);
     let number = u64::from_be_bytes(hash[..8].try_into().unwrap()) % 1_000_000;
     format!("{number:06}")
 }
-
 pub async fn start_telegram_fallback(
     State(app): State<App>,
     jar: CookieJar,
@@ -653,7 +612,6 @@ pub async fn start_telegram_fallback(
     let browser_key = digest(&ticket);
     let link = digest(&key(&app, "telegram link", &ticket));
     let code = key(&app, &link, &bot_code(&app, &ticket));
-
     let flow = match input.mode {
         Mode::Register => {
             sqlx::query_as(
@@ -680,13 +638,11 @@ pub async fn start_telegram_fallback(
     };
     Ok((jar, Json(flow_view(&app, &ticket, flow)?)))
 }
-
 #[derive(Serialize)]
 pub struct Completion {
     stage: String,
     bot_needs_code: bool,
 }
-
 pub async fn complete(
     State(app): State<App>,
     jar: CookieJar,
@@ -755,7 +711,6 @@ pub async fn complete(
         }),
     ))
 }
-
 pub(crate) async fn create_session(
     app: &App,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -791,7 +746,6 @@ pub(crate) async fn create_session(
     }
     Ok(clear(app, jar, FLOW).add(cookie(app, SESSION, session, 30 * 86400)))
 }
-
 async fn drop_old_flow(app: &App, jar: &CookieJar) -> Result<()> {
     if let Some(ticket) = jar.get(FLOW) {
         sqlx::query("DELETE FROM auth_flows WHERE id=$1")
@@ -801,13 +755,11 @@ async fn drop_old_flow(app: &App, jar: &CookieJar) -> Result<()> {
     }
     Ok(())
 }
-
 pub async fn cancel(State(app): State<App>, jar: CookieJar) -> Result<(CookieJar, StatusCode)> {
     drop_old_flow(&app, &jar).await?;
     let jar = crate::telegram::web::cancel(&app, jar).await?;
     Ok((clear(&app, jar, FLOW), StatusCode::NO_CONTENT))
 }
-
 pub async fn logout(State(app): State<App>, jar: CookieJar) -> Result<(CookieJar, StatusCode)> {
     if let Some(session) = jar.get(SESSION) {
         sqlx::query("DELETE FROM sessions WHERE id=$1")

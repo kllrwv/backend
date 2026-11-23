@@ -1,5 +1,4 @@
-use std::collections::HashSet;
-
+use crate::{ApiError, App, Result, profile};
 use axum::{
     Json,
     extract::{Path, State},
@@ -9,21 +8,17 @@ use axum_extra::extract::CookieJar;
 use serde::Deserialize;
 use serde_json::Value;
 use sqlx::PgConnection;
+use std::collections::HashSet;
 use uuid::Uuid;
-
-use crate::{ApiError, App, Result, profile};
-
 const INVALID_POLL: ApiError = ApiError(StatusCode::BAD_REQUEST, "poll_invalid");
 const MISSING: ApiError = ApiError(StatusCode::NOT_FOUND, "poll_missing");
 const CLOSED: ApiError = ApiError(StatusCode::CONFLICT, "poll_closed");
-
 #[derive(Deserialize)]
 pub struct Draft {
     question: String,
     options: Vec<String>,
     duration: Option<i32>,
 }
-
 impl Draft {
     pub fn parse(raw: &str) -> Result<Self> {
         let mut value: Self = serde_json::from_str(raw).map_err(|_| INVALID_POLL)?;
@@ -43,7 +38,6 @@ impl Draft {
         }
         Ok(value)
     }
-
     pub async fn insert(self, db: &mut PgConnection, id: Uuid) -> Result<()> {
         sqlx::query("INSERT INTO polls(post_id,question,ends_at) VALUES($1,$2,now() + make_interval(hours => $3))")
             .bind(id).bind(self.question).bind(self.duration).execute(&mut *db).await?;
@@ -55,16 +49,13 @@ impl Draft {
         Ok(())
     }
 }
-
 fn valid_text(text: &str, limit: usize) -> bool {
     !text.is_empty() && text.chars().count() <= limit && !text.chars().any(char::is_control)
 }
-
 #[derive(Deserialize)]
 pub struct Vote {
     option: i16,
 }
-
 pub async fn vote(
     State(app): State<App>,
     jar: CookieJar,

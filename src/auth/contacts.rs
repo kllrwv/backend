@@ -1,3 +1,4 @@
+use crate::{Result, auth::UNAVAILABLE};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
 use ring::{
@@ -7,15 +8,11 @@ use ring::{
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
-
-use crate::{Result, auth::UNAVAILABLE};
-
 pub struct Store {
     encryption: LessSafeKey,
     indexing: [u8; 32],
     key_check: String,
 }
-
 impl Store {
     pub fn from_hex(secret: &str, app_secret: &str) -> anyhow::Result<Self> {
         anyhow::ensure!(
@@ -30,7 +27,6 @@ impl Store {
         }
         Ok(Self::new(&root, app_secret))
     }
-
     pub fn new(root: &[u8; 32], app_secret: &str) -> Self {
         let encryption = mac(root, "killerwave contact encryption v1", "");
         let check = mac(root, "killerwave contact key check v1", app_secret);
@@ -42,64 +38,49 @@ impl Store {
             key_check: URL_SAFE_NO_PAD.encode(check),
         }
     }
-
     fn lookup(&self, kind: &str, legacy: &str) -> String {
         format!(
             "v1:{}",
             URL_SAFE_NO_PAD.encode(mac(&self.indexing, kind, legacy))
         )
     }
-
     pub fn email_lookup(&self, email: &str) -> String {
-        // The inner digest also lets the migration protect the existing retirement list.
         let legacy = format!(
             "{:x}",
             Sha256::digest(email.to_ascii_lowercase().as_bytes())
         );
         self.lookup("email", &legacy)
     }
-
     pub fn phone_lookup(&self, legacy: &str) -> String {
-        // Existing phone numbers were already represented by an HMAC.
         self.lookup("phone", legacy)
     }
-
     pub fn seal_email(&self, email: &str, lookup: &str) -> Result<Vec<u8>> {
         self.seal("email", lookup, email)
     }
-
     pub fn open_email(&self, lookup: &str, ciphertext: Vec<u8>) -> Result<String> {
         self.open("email", lookup, ciphertext)
     }
-
     pub fn seal_phone_tail(&self, tail: &str, lookup: &str) -> Result<Vec<u8>> {
         self.seal("phone-tail", lookup, tail)
     }
-
     pub fn open_phone_tail(&self, lookup: &str, ciphertext: Vec<u8>) -> Result<String> {
         self.open("phone-tail", lookup, ciphertext)
     }
-
     pub fn seal_phone(&self, phone: &str, lookup: &str) -> Result<Vec<u8>> {
         self.seal("phone-number", lookup, phone)
     }
-
     pub fn open_phone(&self, lookup: &str, ciphertext: Vec<u8>) -> Result<String> {
         self.open("phone-number", lookup, ciphertext)
     }
-
     pub fn seal_admin_event(&self, event: Uuid, value: &str) -> Result<Vec<u8>> {
         self.seal("admin-event", &event.to_string(), value)
     }
-
     pub fn open_admin_event(&self, event: Uuid, ciphertext: Vec<u8>) -> Result<String> {
         self.open("admin-event", &event.to_string(), ciphertext)
     }
-
     pub fn seal_totp(&self, account: Uuid, generation: Uuid, secret: &str) -> Result<Vec<u8>> {
         self.seal("totp", &format!("{account}:{generation}"), secret)
     }
-
     pub fn open_totp(
         &self,
         account: Uuid,
@@ -108,7 +89,6 @@ impl Store {
     ) -> Result<String> {
         self.open("totp", &format!("{account}:{generation}"), ciphertext)
     }
-
     fn seal(&self, kind: &str, lookup: &str, value: &str) -> Result<Vec<u8>> {
         let mut nonce = [0; NONCE_LEN];
         SystemRandom::new()
@@ -127,7 +107,6 @@ impl Store {
         result.append(&mut ciphertext);
         Ok(result)
     }
-
     fn open(&self, kind: &str, lookup: &str, mut stored: Vec<u8>) -> Result<String> {
         let nonce = stored.get(..NONCE_LEN).ok_or(UNAVAILABLE)?;
         let nonce = Nonce::try_assume_unique_for_key(nonce).map_err(|_| UNAVAILABLE)?;
@@ -141,7 +120,6 @@ impl Store {
             .map_err(|_| UNAVAILABLE)?;
         String::from_utf8(plaintext.to_vec()).map_err(|_| UNAVAILABLE)
     }
-
     pub async fn migrate(&self, db: &PgPool) -> anyhow::Result<()> {
         let mut tx = db.begin().await?;
         sqlx::query("SELECT pg_advisory_xact_lock(73460650021401)")
@@ -159,11 +137,9 @@ impl Store {
             tx.commit().await?;
             return Ok(());
         }
-
         sqlx::raw_sql("LOCK TABLE accounts, auth_flows, account_changes, retired_contacts IN ACCESS EXCLUSIVE MODE;
                       DROP TRIGGER enforce_contact_history ON accounts;")
             .execute(&mut *tx).await?;
-
         let mut cursor: Option<Uuid> = None;
         loop {
             let rows: Vec<(Uuid, String, String, Option<String>)> = sqlx::query_as(
@@ -279,7 +255,6 @@ impl Store {
         Ok(())
     }
 }
-
 fn mac(key: &[u8; 32], purpose: &str, value: &str) -> [u8; 32] {
     let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("valid hmac key");
     mac.update(purpose.as_bytes());
@@ -287,11 +262,9 @@ fn mac(key: &[u8; 32], purpose: &str, value: &str) -> [u8; 32] {
     mac.update(value.as_bytes());
     mac.finalize().into_bytes().into()
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[sqlx::test(migrations = "./migrations")]
     async fn migrates_saved_contacts_and_pending_changes(db: PgPool) {
         sqlx::raw_sql(
@@ -308,7 +281,6 @@ mod tests {
                  ('email', contact_fingerprint('email', 'retired@example.test')),
                  ('phone', 'legacy-retired-phone');"
         ).execute(&db).await.unwrap();
-
         let store = Store::new(&[11; 32], "app-key");
         store.migrate(&db).await.unwrap();
         let (lookup, ciphertext, phone, tail): (String, Vec<u8>, String, Vec<u8>) = sqlx::query_as(
@@ -332,7 +304,6 @@ mod tests {
         );
         assert_eq!(phone, store.phone_lookup("legacy-phone"));
         assert_eq!(store.open_phone_tail(&phone, tail).unwrap(), "0123");
-
         let (flow_lookup, flow_cipher): (String, Vec<u8>) = sqlx::query_as(
             "SELECT email_lookup,email_ciphertext FROM auth_flows WHERE id='test-flow'",
         )
@@ -343,7 +314,6 @@ mod tests {
             store.open_email(&flow_lookup, flow_cipher).unwrap(),
             "register@example.test"
         );
-
         let (previous, pending, cipher): (String, String, Vec<u8>) =
             sqlx::query_as("SELECT previous,destination_lookup,destination_ciphertext FROM account_changes WHERE kind='email'")
                 .fetch_one(&db).await.unwrap();
@@ -359,7 +329,6 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(previous_phone, phone);
-
         for (kind, value) in [
             ("email", store.email_lookup("retired@example.test")),
             ("phone", store.phone_lookup("legacy-retired-phone")),

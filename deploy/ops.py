@@ -1,4 +1,3 @@
-"""Read-only Docker telemetry and allowlisted operations for the API's local spool."""
 import datetime
 import fcntl
 import json
@@ -10,7 +9,6 @@ import stat
 import subprocess
 import tempfile
 import time
-
 ROOT = Path("/root/killerwave")
 SPOOL = ROOT / "ops-state"
 ENV_FILE = ROOT / ".env"
@@ -23,33 +21,23 @@ ENV_KEYS = {
     "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY", "S3_SESSION_TOKEN",
 }
 JOB = re.compile(r"([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\.json\Z")
-
-
 def docker(*args, timeout=100):
     return subprocess.run(
         ["docker", *args], cwd=ROOT, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         check=True, timeout=timeout, text=True,
     ).stdout
-
-
 def compose(*args, timeout=100):
     return docker("compose", "-f", "compose.production.yaml", *args, timeout=timeout)
-
-
 def rows(text):
     try:
         value = json.loads(text)
         return value if isinstance(value, list) else [value]
     except ValueError:
         return [json.loads(line) for line in text.splitlines() if line.strip()]
-
-
 def environment():
     config = json.loads(compose("config", "--format", "json", timeout=12))["services"]["api"]["environment"]
     return {key: config.get(key) for key in ENV_KEYS}
-
-
 def atomic(path, content, group=0, mode=0o600):
     fd, filename = tempfile.mkstemp(dir=path.parent)
     try:
@@ -62,8 +50,6 @@ def atomic(path, content, group=0, mode=0o600):
         os.replace(filename, path)
     finally:
         Path(filename).unlink(missing_ok=True)
-
-
 def apply_environment(job):
     values, expected = job["values"], job["expected"]
     if not isinstance(values, dict) or not isinstance(expected, dict) or not values or values.keys() != expected.keys():
@@ -98,8 +84,6 @@ def apply_environment(job):
             pass
         return False
     return True
-
-
 def process(path):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "r", encoding="utf-8") as stream:
@@ -114,8 +98,6 @@ def process(path):
     if job.get("op") == "env":
         return apply_environment(job)
     return False
-
-
 def get_host():
     mem = {}
     for line in Path("/proc/meminfo").read_text().splitlines():
@@ -129,8 +111,6 @@ def get_host():
         "memory": f"{(mem['MemTotal'] - mem['MemAvailable']) / 2**20:.0f} / {mem['MemTotal'] / 2**20:.0f} mib",
         "disk": f"{disk.used / 2**30:.1f} / {disk.total / 2**30:.1f} gib",
     }
-
-
 def get_services():
     entries = rows(compose("ps", "-a", "--format", "json", timeout=12))
     containers = {row["Service"]: row for row in entries if row.get("Service") in SERVICES}
@@ -156,8 +136,6 @@ def get_services():
         data.append({"name": name, "state": entry.get("State", "missing"), "health": entry.get("Health"),
                      "cpu": usage.get("CPUPerc"), "memory": usage.get("MemUsage", "").lower(), "uptime": up.get(container)})
     return data
-
-
 def main():
     with (SPOOL / "runner.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -178,7 +156,6 @@ def main():
                 except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
                     success = False
                 results[identity] = {"success": success, "at": int(time.time())}
-                # Keep the completion marker across API and host restarts before removing the input.
                 previous["results"] = results
                 atomic(state_path, json.dumps(previous), RUNTIME_UID, 0o640)
             path.unlink(missing_ok=True)
@@ -186,7 +163,5 @@ def main():
         state = {"host": get_host(), "services": get_services(), "env": environment(), "results": results,
                  "generated": int(time.time())}
         atomic(state_path, json.dumps(state), RUNTIME_UID, 0o640)
-
-
 if __name__ == "__main__":
     main()

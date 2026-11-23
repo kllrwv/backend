@@ -1,3 +1,13 @@
+use super::{
+    Actor, CONFLICT, DENIED, MISSING, allows_target,
+    audit::{self, Change, Entity, Undo},
+    current_role, mutate, panel_actor,
+};
+use crate::{
+    ApiError, App, Result,
+    auth::{self, INVALID},
+    media, profile,
+};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -9,18 +19,6 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::PgConnection;
 use uuid::Uuid;
-
-use super::{
-    Actor, CONFLICT, DENIED, MISSING, allows_target,
-    audit::{self, Change, Entity, Undo},
-    current_role, mutate, panel_actor,
-};
-use crate::{
-    ApiError, App, Result,
-    auth::{self, INVALID},
-    media, profile,
-};
-
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Kind {
@@ -32,7 +30,6 @@ pub(super) enum Kind {
     Banner,
     Poll,
 }
-
 impl Kind {
     fn name(self) -> &'static str {
         match self {
@@ -45,7 +42,6 @@ impl Kind {
             Self::Poll => "poll",
         }
     }
-
     fn permission(self) -> &'static str {
         if matches!(self, Self::Account) {
             "accounts.lifecycle"
@@ -54,7 +50,6 @@ impl Kind {
         }
     }
 }
-
 #[derive(Deserialize)]
 pub struct Draft {
     kind: Kind,
@@ -63,7 +58,6 @@ pub struct Draft {
     reason: String,
     description: String,
 }
-
 pub async fn file(
     State(app): State<App>,
     jar: CookieJar,
@@ -115,13 +109,11 @@ pub async fn file(
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 #[derive(Deserialize)]
 pub struct Queue {
     state: Option<String>,
     offset: Option<i64>,
 }
-
 pub async fn queue(
     State(app): State<App>,
     jar: CookieJar,
@@ -153,7 +145,6 @@ pub async fn queue(
     ).bind(state).bind(input.offset.unwrap_or(0).clamp(0,1_000_000)).fetch_all(&app.0.db).await?;
     Ok(Json(items))
 }
-
 pub async fn report_media(
     State(app): State<App>,
     jar: CookieJar,
@@ -205,7 +196,6 @@ pub async fn report_media(
     };
     Ok(response)
 }
-
 #[derive(Deserialize)]
 pub struct Decision {
     accept: bool,
@@ -214,7 +204,6 @@ pub struct Decision {
     #[serde(default)]
     note: String,
 }
-
 pub async fn review(
     State(app): State<App>,
     jar: CookieJar,
@@ -262,7 +251,6 @@ pub async fn review(
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 async fn remove(
     db: &mut PgConnection,
     actor: &Actor,
@@ -310,12 +298,10 @@ async fn remove(
     }
     Ok(change)
 }
-
 #[derive(Deserialize)]
 pub struct Delete {
     part: Option<i16>,
 }
-
 async fn delete(app: &App, actor: Actor, kind: Kind, id: Uuid, part: i16) -> Result<StatusCode> {
     let (mut tx, actor) = mutate(&app.0.db, &actor, kind.permission()).await?;
     let change = remove(&mut tx, &actor, kind, id, part).await?;
@@ -332,7 +318,6 @@ async fn delete(app: &App, actor: Actor, kind: Kind, id: Uuid, part: i16) -> Res
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 pub async fn social_delete(
     State(app): State<App>,
     jar: CookieJar,
@@ -345,7 +330,6 @@ pub async fn social_delete(
     drop(db);
     delete(&app, actor, kind, id, input.part.unwrap_or(-1)).await
 }
-
 pub async fn panel_delete(
     State(app): State<App>,
     jar: CookieJar,

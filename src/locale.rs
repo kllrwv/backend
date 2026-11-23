@@ -1,21 +1,16 @@
-use std::{collections::HashMap, fs, io::ErrorKind, path::PathBuf};
-
 use serde::Deserialize;
-
+use std::{collections::HashMap, fs, io::ErrorKind, path::PathBuf};
 const EMBEDDED: &str = include_str!("../translations.json");
-
 #[derive(Deserialize)]
 pub struct Translations {
     pub ru: Locale,
     pub en: Locale,
 }
-
 #[derive(Deserialize)]
 pub struct Locale {
     pub bot: Bot,
     pub email: Email,
 }
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Bot {
@@ -41,7 +36,6 @@ pub struct Bot {
     pub support_reply: String,
     admin: Option<AdminBot>,
 }
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdminBot {
@@ -50,7 +44,6 @@ pub struct AdminBot {
     pub card: AccountCard,
     pub audit: AdminAudit,
 }
-
 #[derive(Deserialize)]
 pub struct AdminAudit {
     pub title: String,
@@ -71,7 +64,6 @@ pub struct AdminAudit {
     #[serde(default)]
     pub permissions: HashMap<String, String>,
 }
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountCard {
@@ -124,13 +116,11 @@ pub struct AccountCard {
     pub empty: String,
     pub time_utc: String,
 }
-
 #[derive(Deserialize)]
 pub struct Email {
     pub subject: String,
     pub body: String,
 }
-
 impl Translations {
     pub fn load() -> anyhow::Result<Self> {
         let override_path = std::env::var_os("LOCALIZATIONS_PATH").filter(|path| !path.is_empty());
@@ -148,11 +138,9 @@ impl Translations {
         };
         Self::parse(&raw)
     }
-
     fn embedded() -> anyhow::Result<Self> {
         Self::parse(EMBEDDED)
     }
-
     fn parse(raw: &str) -> anyhow::Result<Self> {
         let translations: Self = serde_json::from_str(raw)?;
         anyhow::ensure!(
@@ -161,7 +149,6 @@ impl Translations {
         );
         Ok(translations)
     }
-
     pub fn admin_bot(&self) -> &AdminBot {
         self.ru
             .bot
@@ -169,7 +156,6 @@ impl Translations {
             .as_ref()
             .expect("validated Russian admin locale")
     }
-
     pub fn get(&self, language: &str) -> &Locale {
         if language.starts_with("ru") {
             &self.ru

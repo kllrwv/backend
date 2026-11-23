@@ -1,3 +1,9 @@
+use crate::{
+    ApiError, App, Result,
+    auth::{INVALID, security},
+    media, profile,
+    social::Enabled,
+};
 use axum::{
     Json,
     extract::{Multipart, Path, Query, State},
@@ -8,16 +14,7 @@ use axum_extra::extract::CookieJar;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-
-use crate::{
-    ApiError, App, Result,
-    auth::{INVALID, security},
-    media, profile,
-    social::Enabled,
-};
-
 const MISSING: ApiError = ApiError(StatusCode::NOT_FOUND, "profile_unavailable");
-
 #[derive(Serialize, sqlx::FromRow)]
 pub struct View {
     id: Uuid,
@@ -38,7 +35,6 @@ pub struct View {
     can_see_likes: bool,
     theme: Option<String>,
 }
-
 pub async fn view(
     State(app): State<App>,
     jar: CookieJar,
@@ -68,7 +64,6 @@ pub async fn view(
     ).bind(viewer.id).bind(handle).bind(target_id).fetch_optional(&app.0.db).await?.ok_or(MISSING)?;
     Ok(Json(view))
 }
-
 pub async fn block(
     State(app): State<App>,
     jar: CookieJar,
@@ -105,14 +100,12 @@ pub async fn block(
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 #[derive(Serialize, sqlx::FromRow)]
 pub struct Blocked {
     id: Uuid,
     username: String,
     name: String,
 }
-
 pub async fn blocked(State(app): State<App>, jar: CookieJar) -> Result<Json<Vec<Blocked>>> {
     let viewer = profile::completed(&app, &jar).await?;
     let list = sqlx::query_as(
@@ -125,7 +118,6 @@ pub async fn blocked(State(app): State<App>, jar: CookieJar) -> Result<Json<Vec<
     .await?;
     Ok(Json(list))
 }
-
 pub async fn banner(
     State(app): State<App>,
     jar: CookieJar,
@@ -145,7 +137,6 @@ pub async fn banner(
     .ok_or(MISSING)?;
     media::serve(&app, object, "image/webp", &headers).await
 }
-
 pub async fn upload_banner(
     State(app): State<App>,
     jar: CookieJar,
@@ -176,7 +167,6 @@ pub async fn upload_banner(
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 pub async fn remove_banner(State(app): State<App>, jar: CookieJar) -> Result<StatusCode> {
     let viewer = profile::completed(&app, &jar).await?;
     sqlx::query(
@@ -187,7 +177,6 @@ pub async fn remove_banner(State(app): State<App>, jar: CookieJar) -> Result<Sta
     .await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 #[derive(Serialize, sqlx::FromRow)]
 pub struct Preferences {
     theme: String,
@@ -197,7 +186,6 @@ pub struct Preferences {
     show_online: bool,
     notice_preferences: Value,
 }
-
 pub async fn preferences(State(app): State<App>, jar: CookieJar) -> Result<Json<Preferences>> {
     let viewer = profile::completed(&app, &jar).await?;
     let value = sqlx::query_as(
@@ -205,7 +193,6 @@ pub async fn preferences(State(app): State<App>, jar: CookieJar) -> Result<Json<
     ).bind(viewer.id).fetch_one(&app.0.db).await?;
     Ok(Json(value))
 }
-
 #[derive(Deserialize)]
 #[serde(tag = "key", content = "value", rename_all = "snake_case")]
 pub enum Preference {
@@ -216,7 +203,6 @@ pub enum Preference {
     ShowOnline(bool),
     Notice { kind: String, enabled: bool },
 }
-
 pub async fn set_preference(
     State(app): State<App>,
     jar: CookieJar,
@@ -261,7 +247,6 @@ pub async fn set_preference(
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 pub async fn presence(
     State(app): State<App>,
     jar: CookieJar,
@@ -280,14 +265,12 @@ pub async fn presence(
         .execute(&app.0.db).await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 #[derive(Deserialize)]
 pub struct NoticeQuery {
     before: Option<i64>,
     #[serde(default)]
     summary: bool,
 }
-
 #[derive(Serialize, sqlx::FromRow)]
 struct Notice {
     id: i64,
@@ -303,7 +286,6 @@ struct Notice {
     created: i64,
     unread: bool,
 }
-
 #[derive(Serialize)]
 pub struct Inbox {
     items: Vec<Notice>,
@@ -312,7 +294,6 @@ pub struct Inbox {
     latest: Option<i64>,
     sound: bool,
 }
-
 pub async fn notices(
     State(app): State<App>,
     jar: CookieJar,
@@ -353,12 +334,10 @@ pub async fn notices(
         sound,
     }))
 }
-
 #[derive(Deserialize)]
 pub struct ReadNotices {
     through: i64,
 }
-
 pub async fn read_notices(
     State(app): State<App>,
     jar: CookieJar,

@@ -1,17 +1,12 @@
 mod account_card;
-
+use super::{Bot, Chat, Message, Rejected, Sender, remove_keyboard};
+use crate::App;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::types::Json;
-
-use crate::App;
-
-use super::{Bot, Chat, Message, Rejected, Sender, remove_keyboard};
-
 pub(crate) async fn private_group(bot: &Bot, group: i64) -> anyhow::Result<()> {
     account_card::require_private_group(bot, group).await
 }
-
 pub async fn refresh(app: &App, bot: &Bot, sender: &Sender) {
     if let Some(group) = app.0.support_chat
         && let Err(error) = account_card::sync(app, bot, group, sender).await
@@ -19,7 +14,6 @@ pub async fn refresh(app: &App, bot: &Bot, sender: &Sender) {
         eprintln!("telegram support account card: {error}");
     }
 }
-
 pub fn chat_from_env() -> anyhow::Result<Option<i64>> {
     let raw = std::env::var("TELEGRAM_SUPPORT_CHAT_ID").unwrap_or_default();
     let raw = raw.trim();
@@ -35,7 +29,6 @@ pub fn chat_from_env() -> anyhow::Result<Option<i64>> {
     );
     Ok(Some(id))
 }
-
 pub async fn start(
     app: &App,
     bot: &Bot,
@@ -81,7 +74,6 @@ pub async fn start(
     };
     bot.send(sender.id, &copy.support_prompt, keyboard).await
 }
-
 pub async fn pause(app: &App, user: i64) -> anyhow::Result<()> {
     if let Some(group) = app.0.support_chat {
         sqlx::query(
@@ -90,12 +82,10 @@ pub async fn pause(app: &App, user: i64) -> anyhow::Result<()> {
     }
     Ok(())
 }
-
 #[derive(Deserialize)]
 struct Topic {
     message_thread_id: i64,
 }
-
 async fn create_topic(app: &App, bot: &Bot, group: i64, sender: &Sender) -> anyhow::Result<i64> {
     let mut tx = app.0.db.begin().await?;
     let existing: Option<i64> = sqlx::query_scalar(
@@ -127,7 +117,6 @@ async fn create_topic(app: &App, bot: &Bot, group: i64, sender: &Sender) -> anyh
     tx.commit().await?;
     Ok(topic.message_thread_id)
 }
-
 pub async fn forward(
     app: &App,
     bot: &Bot,
@@ -159,7 +148,6 @@ pub async fn forward(
         Err(error) => Err(error),
     }
 }
-
 async fn forward_to_topic(
     app: &App,
     bot: &Bot,
@@ -187,7 +175,6 @@ async fn forward_to_topic(
     }
     result
 }
-
 async fn copy_to_ready_topic(
     app: &App,
     bot: &Bot,
@@ -199,12 +186,10 @@ async fn copy_to_ready_topic(
     account_card::sync(app, bot, group, sender).await?;
     copy_message(bot, group, thread, sender.id, message_id).await
 }
-
 #[derive(Deserialize)]
 struct CopiedMessage {
     message_id: i64,
 }
-
 async fn copy_message(
     bot: &Bot,
     group: i64,
@@ -217,7 +202,6 @@ async fn copy_message(
     })).await?;
     Ok(copy.message_id)
 }
-
 async fn record_copy(app: &App, group: i64, copy: i64, original: &Message) -> anyhow::Result<()> {
     let mut tx = app.0.db.begin().await?;
     if copy > 0 {
@@ -231,7 +215,6 @@ async fn record_copy(app: &App, group: i64, copy: i64, original: &Message) -> an
     tx.commit().await?;
     Ok(())
 }
-
 pub async fn reply(app: &App, bot: &Bot, message: &Message) -> anyhow::Result<()> {
     let group = message.chat.id;
     let human = match &message.sender_chat {
@@ -282,7 +265,6 @@ pub async fn reply(app: &App, bot: &Bot, message: &Message) -> anyhow::Result<()
         Err(error) => Err(error),
     }
 }
-
 async fn send_reply(
     app: &App,
     bot: &Bot,
@@ -311,19 +293,16 @@ async fn send_reply(
     }
     Ok(())
 }
-
 fn permanent(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<Rejected>()
         .is_some_and(|failure| matches!(failure.code, 400 | 403 | 404))
 }
-
 async fn delivered(app: &App, message: &Message, part: i16) -> anyhow::Result<bool> {
     Ok(sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM telegram_support_deliveries WHERE chat_id=$1 AND message_id=$2 AND part=$3)",
     ).bind(message.chat.id).bind(message.message_id).bind(part).fetch_one(&app.0.db).await?)
 }
-
 async fn mark_delivered<'db>(
     db: impl sqlx::Executor<'db, Database = sqlx::Postgres>,
     message: &Message,
@@ -334,7 +313,6 @@ async fn mark_delivered<'db>(
     ).bind(message.chat.id).bind(message.message_id).bind(part).execute(db).await?;
     Ok(())
 }
-
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Reaction {
@@ -348,7 +326,6 @@ enum Reaction {
     #[serde(other)]
     Unknown,
 }
-
 #[derive(Deserialize)]
 pub(crate) struct MessageReaction {
     chat: Chat,
@@ -359,12 +336,10 @@ pub(crate) struct MessageReaction {
     old_reaction: Vec<Reaction>,
     new_reaction: Vec<Reaction>,
 }
-
 #[derive(Deserialize)]
 struct ChatMember {
     status: String,
 }
-
 pub async fn react(
     app: &App,
     bot: &Bot,
@@ -425,7 +400,6 @@ pub async fn react(
     ).bind(group).bind(event.message_id).bind(actor).bind(reaction.map(Json))
         .bind(event.date).bind(update_id).execute(&mut *tx).await?.rows_affected();
     if changed != 0 {
-        // Telegram lets bots display one reaction. Keep the most recent active admin reaction.
         let displayed: Option<Json<Reaction>> = sqlx::query_scalar(
             "SELECT reaction FROM telegram_support_admin_reactions
              WHERE group_id=$1 AND group_message_id=$2 AND reaction IS NOT NULL
@@ -452,7 +426,6 @@ pub async fn react(
     tx.commit().await?;
     Ok(())
 }
-
 async fn admin_actor(
     bot: &Bot,
     group: i64,
@@ -478,7 +451,6 @@ async fn admin_actor(
         Err(error) => Err(error),
     }
 }
-
 async fn set_reaction(
     bot: &Bot,
     user: i64,

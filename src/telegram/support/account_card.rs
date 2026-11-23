@@ -1,25 +1,20 @@
-use std::fmt::Write;
-
-use serde::Deserialize;
-use serde_json::{Value, json};
-use uuid::Uuid;
-
 use crate::telegram::{Bot, Rejected, Sender};
 use crate::{App, auth};
-
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::fmt::Write;
+use uuid::Uuid;
 pub(super) fn topic_name(app: &App, sender: &Sender) -> String {
     let fallback = &app.0.translations.admin_bot().topic_fallback;
     let label = telegram_name(sender).unwrap_or_else(|| fallback.clone());
     format!("{label} · {}", sender.id)
 }
-
 fn telegram_name(sender: &Sender) -> Option<String> {
     sender
         .username
         .as_ref()
         .map(|username| format!("@{username}"))
 }
-
 #[derive(Deserialize)]
 struct Group {
     #[serde(rename = "type")]
@@ -31,18 +26,14 @@ struct Group {
     active_usernames: Vec<String>,
     linked_chat_id: Option<i64>,
 }
-
 #[derive(Debug)]
 pub(super) struct PrivateGroupRequired;
-
 impl std::fmt::Display for PrivateGroupRequired {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         out.write_str("support requires a private forum supergroup")
     }
 }
-
 impl std::error::Error for PrivateGroupRequired {}
-
 pub(super) async fn require_private_group(bot: &Bot, group: i64) -> anyhow::Result<()> {
     let info: Group = bot.call("getChat", json!({ "chat_id": group })).await?;
     if info.kind == "supergroup"
@@ -56,7 +47,6 @@ pub(super) async fn require_private_group(bot: &Bot, group: i64) -> anyhow::Resu
         Err(PrivateGroupRequired.into())
     }
 }
-
 #[derive(sqlx::FromRow)]
 struct TopicState {
     thread_id: i64,
@@ -65,12 +55,10 @@ struct TopicState {
     card_fingerprint: Option<String>,
     lang: String,
 }
-
 #[derive(Deserialize)]
 struct CardMessage {
     message_id: i64,
 }
-
 pub(super) async fn sync(app: &App, bot: &Bot, group: i64, sender: &Sender) -> anyhow::Result<()> {
     let mut tx = app.0.db.begin().await?;
     let Some(topic) = sqlx::query_as::<_, TopicState>(
@@ -108,7 +96,6 @@ pub(super) async fn sync(app: &App, bot: &Bot, group: i64, sender: &Sender) -> a
     if !rename && !update {
         return Ok(());
     }
-
     require_private_group(bot, group).await?;
     if rename {
         let result = bot
@@ -146,7 +133,6 @@ pub(super) async fn sync(app: &App, bot: &Bot, group: i64, sender: &Sender) -> a
     tx.commit().await?;
     Ok(())
 }
-
 async fn publish(bot: &Bot, group: i64, topic: &TopicState, card: &str) -> anyhow::Result<i64> {
     if let Some(id) = topic.card_message_id {
         let result = bot
@@ -183,7 +169,6 @@ async fn publish(bot: &Bot, group: i64, topic: &TopicState, card: &str) -> anyho
     );
     Ok(message.message_id)
 }
-
 #[derive(sqlx::FromRow)]
 struct Account {
     id: Uuid,
@@ -209,7 +194,6 @@ struct Account {
     show_online: bool,
     notice_preferences: Value,
 }
-
 fn render(
     app: &App,
     sender: &Sender,
@@ -340,12 +324,10 @@ fn render(
     }
     Ok(card)
 }
-
 fn section(card: &mut String, title: &str) {
     card.push_str("\n\n");
     card.push_str(title);
 }
-
 fn fields<const N: usize>(card: &mut String, values: [(&str, &str); N]) -> std::fmt::Result {
     for (name, value) in values {
         write!(card, "\n{name}: {value}")?;

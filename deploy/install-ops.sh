@@ -1,6 +1,5 @@
 #!/bin/sh
 set -eu
-
 cd /root/killerwave
 install -d -o 0 -g 10001 -m 0750 ops-state
 install -d -o 0 -g 10001 -m 0770 ops-state/inbox

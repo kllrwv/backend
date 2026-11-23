@@ -1,6 +1,10 @@
 pub(crate) mod discovery;
 pub(crate) mod poll;
-
+use crate::{
+    ApiError, App, Result,
+    auth::{INVALID, RATE},
+    media, profile,
+};
 use axum::{
     Json,
     extract::{Multipart, Path, Query, State},
@@ -11,15 +15,7 @@ use axum_extra::extract::CookieJar;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-
-use crate::{
-    ApiError, App, Result,
-    auth::{INVALID, RATE},
-    media, profile,
-};
-
 const MISSING: ApiError = ApiError(StatusCode::NOT_FOUND, "post_missing");
-
 #[derive(Default, Deserialize)]
 pub struct FeedQuery {
     #[serde(default)]
@@ -37,7 +33,6 @@ pub struct FeedQuery {
     #[serde(default)]
     order: CommentOrder,
 }
-
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum FeedMode {
@@ -45,7 +40,6 @@ enum FeedMode {
     Recommended,
     Following,
 }
-
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 enum CommentOrder {
@@ -54,7 +48,6 @@ enum CommentOrder {
     Popular,
     Recent,
 }
-
 #[derive(Serialize)]
 pub struct FeedPage {
     posts: Vec<Value>,
@@ -62,7 +55,6 @@ pub struct FeedPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     has_following_posts: Option<bool>,
 }
-
 pub async fn feed(
     State(app): State<App>,
     jar: CookieJar,
@@ -99,7 +91,6 @@ pub async fn feed(
         has_following_posts,
     }))
 }
-
 pub async fn post(
     State(app): State<App>,
     jar: CookieJar,
@@ -109,7 +100,6 @@ pub async fn post(
     let (mut posts, _) = select_posts(&app, viewer.id, &FeedQuery::default(), Some(id)).await?;
     Ok(Json(posts.pop().ok_or(MISSING)?))
 }
-
 async fn select_posts(
     app: &App,
     viewer: Uuid,
@@ -137,7 +127,6 @@ async fn select_posts(
         .fetch_one(&app.0.db)
         .await?)
 }
-
 pub async fn publish(
     State(app): State<App>,
     jar: CookieJar,
@@ -214,7 +203,6 @@ pub async fn publish(
             _ => return Err(INVALID),
         }
     }
-
     let body = body.as_deref().unwrap_or_default().trim();
     if body.chars().count() > 1000 || body.contains('\0') || (reply.is_some() && repost.is_some()) {
         return Err(INVALID);
@@ -222,7 +210,6 @@ pub async fn publish(
     if body.is_empty() && attachments.is_empty() && poll.is_none() && repost.is_none() {
         return Err(ApiError(StatusCode::BAD_REQUEST, "post_empty"));
     }
-
     if (poll.is_some() || wall.is_some()) && (reply.is_some() || repost.is_some()) {
         return Err(INVALID);
     }
@@ -236,7 +223,6 @@ pub async fn publish(
         ));
     }
     drop(upload_slot);
-
     let mut tx = app.0.db.begin().await?;
     if let Some(owner) = wall {
         let allowed: bool = sqlx::query_scalar(
@@ -290,7 +276,6 @@ pub async fn publish(
             error.into()
         }
     })?;
-
     if result.rows_affected() > 0 {
         for (position, (object_id, kind, mime, title)) in staged.into_iter().enumerate() {
             media::retain(&mut tx, object_id).await?;
@@ -313,12 +298,10 @@ pub async fn publish(
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(id)))
 }
-
 #[derive(Deserialize)]
 pub struct Enabled {
     pub(crate) enabled: bool,
 }
-
 pub async fn like(
     State(app): State<App>,
     jar: CookieJar,
@@ -338,7 +321,6 @@ pub async fn like(
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 pub async fn watch(
     State(app): State<App>,
     jar: CookieJar,
@@ -356,7 +338,6 @@ pub async fn watch(
     .await?;
     Ok(Json(count))
 }
-
 pub async fn follow(
     State(app): State<App>,
     jar: CookieJar,
@@ -379,7 +360,6 @@ pub async fn follow(
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 pub async fn delete_post(
     State(app): State<App>,
     jar: CookieJar,
@@ -397,7 +377,6 @@ pub async fn delete_post(
     }
     Ok(StatusCode::NO_CONTENT)
 }
-
 pub async fn image(
     State(app): State<App>,
     jar: CookieJar,
@@ -414,7 +393,6 @@ pub async fn image(
     .ok_or(MISSING)?;
     Ok(media::legacy_image(bytes))
 }
-
 pub async fn attachment(
     State(app): State<App>,
     jar: CookieJar,
@@ -431,7 +409,6 @@ pub async fn attachment(
             .ok_or(MISSING)?;
     media::serve(&app, object_id, &mime, &headers).await
 }
-
 pub async fn author_avatar(
     State(app): State<App>,
     jar: CookieJar,

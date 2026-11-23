@@ -1,7 +1,9 @@
 pub(crate) mod community;
-
-use std::io::Cursor;
-
+use crate::{
+    ApiError, App, Result,
+    auth::{self, FlowView, INVALID, SESSION},
+    media,
+};
 use axum::{
     Json,
     extract::{Multipart, State},
@@ -11,14 +13,8 @@ use axum::{
 use axum_extra::extract::CookieJar;
 use image::{ImageFormat, ImageReader, Limits};
 use serde::Serialize;
+use std::io::Cursor;
 use uuid::Uuid;
-
-use crate::{
-    ApiError, App, Result,
-    auth::{self, FlowView, INVALID, SESSION},
-    media,
-};
-
 #[derive(Serialize, sqlx::FromRow)]
 pub struct Profile {
     #[serde(skip)]
@@ -28,13 +24,11 @@ pub struct Profile {
     bio: String,
     has_avatar: bool,
 }
-
 #[derive(Serialize)]
 pub struct BrowserState {
     profile: Option<Profile>,
     flow: Option<FlowView>,
 }
-
 async fn account(app: &App, jar: &CookieJar) -> Result<Option<Profile>> {
     let Some(session) = jar.get(SESSION) else {
         return Ok(None);
@@ -48,13 +42,11 @@ async fn account(app: &App, jar: &CookieJar) -> Result<Option<Profile>> {
     .await?;
     Ok(result)
 }
-
 async fn required(app: &App, jar: &CookieJar) -> Result<Profile> {
     account(app, jar)
         .await?
         .ok_or(ApiError(StatusCode::UNAUTHORIZED, "sign_in_required"))
 }
-
 pub async fn me(State(app): State<App>, jar: CookieJar) -> Result<Json<BrowserState>> {
     let profile = account(&app, &jar).await?;
     let flow = if profile.is_none() {
@@ -64,7 +56,6 @@ pub async fn me(State(app): State<App>, jar: CookieJar) -> Result<Json<BrowserSt
     };
     Ok(Json(BrowserState { profile, flow }))
 }
-
 pub async fn save(
     State(app): State<App>,
     jar: CookieJar,
@@ -112,7 +103,6 @@ pub async fn save(
     if bio.chars().count() > 500 {
         return Err(ApiError(StatusCode::BAD_REQUEST, "bio_invalid"));
     }
-
     if remove_avatar && avatar.is_some() {
         return Err(INVALID);
     }
@@ -148,7 +138,6 @@ pub async fn save(
     tx.commit().await?;
     Ok(Json(updated))
 }
-
 pub(crate) fn encode_image(bytes: &[u8], square: bool) -> Option<Vec<u8>> {
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
@@ -164,7 +153,6 @@ pub(crate) fn encode_image(bytes: &[u8], square: bool) -> Option<Vec<u8>> {
     limits.max_image_height = Some(4096);
     limits.max_alloc = Some(96 * 1024 * 1024);
     reader.limits(limits);
-
     let img = reader.decode().ok()?;
     let img = if square {
         let side = img.width().min(img.height());
@@ -182,7 +170,6 @@ pub(crate) fn encode_image(bytes: &[u8], square: bool) -> Option<Vec<u8>> {
     img.write_to(&mut buffer, ImageFormat::WebP).ok()?;
     Some(buffer.into_inner())
 }
-
 pub async fn avatar(
     State(app): State<App>,
     jar: CookieJar,
@@ -198,7 +185,6 @@ pub async fn avatar(
     }
     serve_avatar(&app, profile.id, &headers).await
 }
-
 pub async fn serve_avatar(app: &App, account: Uuid, headers: &HeaderMap) -> Result<Response> {
     let (object_id, legacy): (Option<Uuid>, Option<Vec<u8>>) =
         sqlx::query_as("SELECT avatar_object_id, avatar FROM accounts WHERE id=$1")
@@ -213,7 +199,6 @@ pub async fn serve_avatar(app: &App, account: Uuid, headers: &HeaderMap) -> Resu
             .ok_or(ApiError(StatusCode::NOT_FOUND, "avatar_missing")),
     }
 }
-
 pub(crate) async fn completed(app: &App, jar: &CookieJar) -> Result<Profile> {
     let profile = required(app, jar).await?;
     if profile.username.is_none() {

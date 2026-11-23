@@ -1,3 +1,8 @@
+use crate::{
+    ApiError, App, Result,
+    auth::{self, EXPIRED, INVALID, Lang, RATE, SESSION, UNAVAILABLE},
+    profile,
+};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use axum::{
     Json,
@@ -9,20 +14,11 @@ use rand::{Rng, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 use sqlx::PgConnection;
 use uuid::Uuid;
-
-use crate::{
-    ApiError, App, Result,
-    auth::{self, EXPIRED, INVALID, Lang, RATE, SESSION, UNAVAILABLE},
-    profile,
-};
-
 const CREDENTIALS: ApiError = ApiError(StatusCode::UNAUTHORIZED, "credentials");
 pub const CONTACT_UNAVAILABLE: ApiError = ApiError(StatusCode::CONFLICT, "contact_unavailable");
-
 pub fn session(jar: &CookieJar) -> Result<String> {
     Ok(auth::digest(jar.get(SESSION).ok_or(CREDENTIALS)?.value()))
 }
-
 pub fn device(agent: Option<&str>) -> Option<String> {
     let agent = agent?;
     let browser = if agent.contains("Edg/") {
@@ -51,7 +47,6 @@ pub fn device(agent: Option<&str>) -> Option<String> {
     };
     Some(format!("{browser} · {system}"))
 }
-
 pub(crate) async fn verify(app: &App, id: Uuid, password: String) -> Result<String> {
     if password.is_empty() || password.len() > 512 {
         return Err(CREDENTIALS);
@@ -79,7 +74,6 @@ pub(crate) async fn verify(app: &App, id: Uuid, password: String) -> Result<Stri
     .await
     .map_err(|_| UNAVAILABLE)?
 }
-
 #[derive(Serialize, sqlx::FromRow)]
 struct Device {
     id: Uuid,
@@ -87,7 +81,6 @@ struct Device {
     last_seen: i64,
     current: bool,
 }
-
 #[derive(Serialize)]
 pub struct Security {
     email: Option<String>,
@@ -97,7 +90,6 @@ pub struct Security {
     totp_enabled: bool,
     sessions: Vec<Device>,
 }
-
 pub async fn summary(State(app): State<App>, jar: CookieJar) -> Result<Json<Security>> {
     let viewer = profile::completed(&app, &jar).await?;
     let (lookup, ciphertext, phone_key, phone_ciphertext, totp_enabled, telegram_linked):
@@ -126,12 +118,10 @@ pub async fn summary(State(app): State<App>, jar: CookieJar) -> Result<Json<Secu
         sessions,
     }))
 }
-
 #[derive(Deserialize)]
 pub struct Revoke {
     id: Option<Uuid>,
 }
-
 pub async fn revoke(
     State(app): State<App>,
     jar: CookieJar,
@@ -142,14 +132,12 @@ pub async fn revoke(
         .bind(viewer.id).bind(session(&jar)?).bind(input.id).execute(&app.0.db).await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 #[derive(Deserialize)]
 pub struct PasswordChange {
     password: String,
     new_password: String,
     confirmation: String,
 }
-
 pub async fn change_password(
     State(app): State<App>,
     jar: CookieJar,
@@ -204,7 +192,6 @@ pub async fn change_password(
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 #[derive(Deserialize)]
 pub struct EmailStart {
     email: String,
@@ -215,7 +202,6 @@ pub struct EmailStart {
 pub struct Ticket {
     id: Uuid,
 }
-
 pub async fn email_start(
     State(app): State<App>,
     jar: CookieJar,
@@ -252,13 +238,11 @@ pub async fn email_start(
     }
     Ok(Json(Ticket { id }))
 }
-
 #[derive(Deserialize)]
 pub struct EmailVerify {
     id: Uuid,
     code: String,
 }
-
 pub async fn email_verify(
     State(app): State<App>,
     jar: CookieJar,
@@ -311,14 +295,12 @@ pub async fn email_verify(
     }
     Ok(StatusCode::NO_CONTENT)
 }
-
 async fn contact_lock(db: &mut PgConnection) -> Result<()> {
     sqlx::query("SELECT pg_advisory_xact_lock(73460650021401)")
         .execute(db)
         .await?;
     Ok(())
 }
-
 #[derive(Deserialize)]
 pub struct Password {
     password: String,
@@ -328,7 +310,6 @@ pub struct PhoneLink {
     id: Uuid,
     url: String,
 }
-
 pub async fn phone_start(
     State(app): State<App>,
     jar: CookieJar,
@@ -367,12 +348,10 @@ pub async fn phone_start(
         url: format!("https://t.me/{}?start=phone_{token}", bot.username),
     }))
 }
-
 #[derive(Serialize)]
 pub struct PhoneStatus {
     result: Option<String>,
 }
-
 pub async fn phone_status(
     State(app): State<App>,
     jar: CookieJar,
@@ -384,7 +363,6 @@ pub async fn phone_status(
     ).bind(id).bind(viewer.id).bind(session(&jar)?).fetch_optional(&app.0.db).await?.ok_or(EXPIRED)?;
     Ok(Json(PhoneStatus { result }))
 }
-
 pub async fn cancel_change(
     State(app): State<App>,
     jar: CookieJar,
@@ -399,7 +377,6 @@ pub async fn cancel_change(
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 pub async fn open_phone(app: &App, sender: i64, token: &str) -> Result<bool> {
     let updated = sqlx::query(
         "UPDATE account_changes c SET bot_opened=true FROM accounts a, sessions s
@@ -413,7 +390,6 @@ pub async fn open_phone(app: &App, sender: i64, token: &str) -> Result<bool> {
     .rows_affected();
     Ok(updated == 1)
 }
-
 pub async fn phone_change_pending(app: &App, sender: i64) -> Result<bool> {
     Ok(sqlx::query_scalar(
         "SELECT EXISTS(
@@ -427,7 +403,6 @@ pub async fn phone_change_pending(app: &App, sender: i64) -> Result<bool> {
     .fetch_one(&app.0.db)
     .await?)
 }
-
 pub async fn confirm_phone(app: &App, sender: i64, phone: &str) -> Result<Option<bool>> {
     let mut tx = app.0.db.begin().await?;
     let change: Option<(Uuid,Uuid,Option<String>)> = sqlx::query_as(
@@ -468,7 +443,6 @@ pub async fn confirm_phone(app: &App, sender: i64, phone: &str) -> Result<Option
     tx.commit().await?;
     Ok(Some(changed))
 }
-
 pub async fn delete_account(
     State(app): State<App>,
     jar: CookieJar,

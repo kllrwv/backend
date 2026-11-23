@@ -6,14 +6,7 @@ mod profile;
 mod social;
 mod status;
 mod telegram;
-
 use auth::{contacts, security, totp};
-use profile::community;
-use social::{discovery, poll};
-use telegram::{support, web};
-
-use std::{env, sync::Arc, time::Duration};
-
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Request, State},
@@ -26,13 +19,15 @@ use lettre::{
     AsyncSmtpTransport, Tokio1Executor, message::Mailbox,
     transport::smtp::authentication::Credentials,
 };
+use profile::community;
 use serde_json::json;
+use social::{discovery, poll};
 use sqlx::{PgPool, postgres::PgPoolOptions};
+use std::{env, sync::Arc, time::Duration};
+use telegram::{support, web};
 use tokio::sync::Semaphore;
-
 #[derive(Clone)]
 struct App(Arc<Config>);
-
 struct Config {
     db: PgPool,
     origin: String,
@@ -52,20 +47,16 @@ struct Config {
     dummy_hash: String,
     admin: admin::Settings,
 }
-
 #[derive(Debug)]
 struct ApiError(StatusCode, &'static str);
 type Result<T> = std::result::Result<T, ApiError>;
-
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (self.0, Json(json!({ "error": self.1 }))).into_response()
     }
 }
-
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
-        // Database error details can contain user input.
         eprintln!(
             "database operation failed: {}",
             error
@@ -77,7 +68,6 @@ impl From<sqlx::Error> for ApiError {
         Self(StatusCode::INTERNAL_SERVER_ERROR, "unavailable")
     }
 }
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
@@ -99,9 +89,7 @@ async fn main() -> anyhow::Result<()> {
         secret.len() == 64 && secret.bytes().all(|byte| byte.is_ascii_hexdigit()),
         "set APP_SECRET using openssl rand -hex 32"
     );
-
     let contacts = contacts::Store::from_hex(&env::var("CONTACT_SECRET")?, &secret)?;
-
     let mut smtp = match env::var("SMTP_MODE")?.as_str() {
         "starttls" => {
             AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&env::var("SMTP_HOST")?)?
@@ -117,7 +105,6 @@ async fn main() -> anyhow::Result<()> {
     {
         smtp = smtp.credentials(Credentials::new(user, env::var("SMTP_PASSWORD")?));
     }
-
     let db = PgPoolOptions::new()
         .max_connections(12)
         .acquire_timeout(Duration::from_secs(5))
@@ -125,7 +112,6 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     sqlx::migrate!().run(&db).await?;
     contacts.migrate(&db).await?;
-
     let bot = match env::var("TELEGRAM_BOT_TOKEN")
         .ok()
         .filter(|token| !token.is_empty())
@@ -160,7 +146,6 @@ async fn main() -> anyhow::Result<()> {
             .map_err(|_| anyhow::anyhow!("password hashing initialization failed"))?,
         admin: admin::Settings::from_env(&parsed_origin)?,
     }));
-
     admin::bootstrap(&app).await?;
     if let Some(bot) = app.0.bot.clone() {
         tokio::spawn(telegram::poll(app.clone(), bot));
@@ -171,13 +156,11 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(media::collect(app.clone()));
     tokio::spawn(media::measure(app.clone()));
     tokio::spawn(admin::dispatch(app.clone()));
-
     let listener = tokio::net::TcpListener::bind(env::var("API_BIND")?).await?;
     println!("killerwave api on {}", listener.local_addr()?);
     axum::serve(listener, router(app)).await?;
     Ok(())
 }
-
 fn router(app: App) -> Router {
     Router::new()
         .route("/api/health", get(health))
@@ -257,7 +240,6 @@ fn router(app: App) -> Router {
         .layer(middleware::from_fn_with_state(app.clone(), browser_request))
         .with_state(app)
 }
-
 async fn health(State(app): State<App>) -> StatusCode {
     let ready = tokio::time::timeout(
         Duration::from_secs(2),
@@ -269,7 +251,6 @@ async fn health(State(app): State<App>) -> StatusCode {
         _ => StatusCode::SERVICE_UNAVAILABLE,
     }
 }
-
 async fn browser_request(State(app): State<App>, request: Request, next: Next) -> Response {
     let admin_path = request.uri().path().starts_with("/api/admin/");
     let origin = request
@@ -295,7 +276,6 @@ async fn browser_request(State(app): State<App>, request: Request, next: Next) -
         .insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse().unwrap());
     response
 }
-
 async fn cleanup(app: App) {
     let mut interval = tokio::time::interval(Duration::from_secs(600));
     loop {

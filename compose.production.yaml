@@ -18,7 +18,6 @@ services:
       admin:
         condition: service_healthy
     restart: unless-stopped
-
   web:
     build:
       context: ${KILLERWAVE_FRONTEND_DIR:-../frontend}
@@ -30,7 +29,6 @@ services:
       start_period: 10s
     init: true
     restart: unless-stopped
-
   admin:
     build:
       context: ${KILLERWAVE_ADMIN_DIR:-../admin}
@@ -44,7 +42,6 @@ services:
       start_period: 10s
     init: true
     restart: unless-stopped
-
   api:
     build: .
     env_file:
@@ -75,7 +72,6 @@ services:
       start_period: 10s
     init: true
     restart: unless-stopped
-
   postgres:
     image: postgres:17-alpine
     environment:
@@ -90,7 +86,6 @@ services:
       timeout: 3s
       retries: 12
     restart: unless-stopped
-
 volumes:
   postgres:
   caddy_data:

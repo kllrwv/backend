@@ -1,49 +1,39 @@
 killerwave.xyz {
 	encode zstd gzip
-
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy no-referrer
 	}
-
 	handle /api/* {
 		reverse_proxy api:18080
 	}
-
 	handle /control* {
 		respond 404
 	}
-
 	handle {
 		reverse_proxy web:3000
 	}
 }
-
 admin.killerwave.xyz {
 	encode zstd gzip
-
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy no-referrer
 	}
-
 	@admin_api path /api/admin/*
 	handle @admin_api {
 		reverse_proxy api:18080
 	}
-
 	@assets path /_next/* /logo.svg
 	handle @assets {
 		reverse_proxy admin:3000
 	}
-
 	handle / {
 		rewrite * /control
 		reverse_proxy admin:3000
 	}
-
 	handle {
 		respond 404
 	}

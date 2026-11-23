@@ -1,25 +1,20 @@
 mod language;
 pub(crate) mod support;
 pub(crate) mod web;
-
-use std::{collections::HashMap, fmt, time::Duration};
-
-use serde::Deserialize;
-use serde_json::{Value, json};
-use uuid::Uuid;
-
 use crate::{
     App,
     auth::{code_matches, digest, key, security, six_digits},
 };
-
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::{collections::HashMap, fmt, time::Duration};
+use uuid::Uuid;
 #[derive(Clone)]
 pub struct Bot {
     api_base: String,
     client: reqwest::Client,
     pub username: String,
 }
-
 #[derive(Deserialize)]
 struct Reply<T> {
     result: Option<T>,
@@ -27,12 +22,10 @@ struct Reply<T> {
     description: Option<String>,
     parameters: Option<ResponseParameters>,
 }
-
 #[derive(Deserialize)]
 struct ResponseParameters {
     retry_after: Option<u64>,
 }
-
 #[derive(Debug)]
 pub(crate) struct Rejected {
     method: &'static str,
@@ -42,20 +35,16 @@ pub(crate) struct Rejected {
     pub not_modified: bool,
     retry_after: Option<u64>,
 }
-
 impl fmt::Display for Rejected {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "telegram {} failed ({})", self.method, self.code)
     }
 }
-
 impl std::error::Error for Rejected {}
-
 #[derive(Deserialize)]
 struct Identity {
     username: String,
 }
-
 impl Bot {
     pub async fn connect(token: String) -> anyhow::Result<Self> {
         anyhow::ensure!(
@@ -93,7 +82,6 @@ impl Bot {
         );
         Ok(bot)
     }
-
     pub(crate) async fn call<T: serde::de::DeserializeOwned>(
         &self,
         method: &'static str,
@@ -126,7 +114,6 @@ impl Bot {
             .into()
         })
     }
-
     pub(crate) async fn send(&self, chat: i64, text: &str, keyboard: Value) -> anyhow::Result<()> {
         let result = self
             .call::<Value>(
@@ -135,18 +122,15 @@ impl Bot {
             )
             .await;
         if let Err(error) = result {
-            // A blocked or unreachable recipient must not stall all incoming updates.
             eprintln!("{error}");
         }
         Ok(())
     }
 }
-
 #[derive(Deserialize)]
 struct Webhook {
     url: String,
 }
-
 #[derive(Deserialize)]
 struct Update {
     update_id: i64,
@@ -155,7 +139,6 @@ struct Update {
     callback_query: Option<language::Callback>,
     message_reaction: Option<support::MessageReaction>,
 }
-
 #[derive(Deserialize)]
 pub(crate) struct Message {
     pub chat: Chat,
@@ -171,20 +154,17 @@ pub(crate) struct Message {
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
 }
-
 #[derive(Deserialize)]
 struct QuotedMessage {
     text: Option<String>,
     contact: Option<Value>,
 }
-
 #[derive(Deserialize)]
 pub(crate) struct Chat {
     pub id: i64,
     #[serde(rename = "type")]
     pub kind: String,
 }
-
 #[derive(Deserialize)]
 pub(crate) struct Sender {
     pub id: i64,
@@ -192,13 +172,11 @@ pub(crate) struct Sender {
     pub language_code: Option<String>,
     pub is_bot: bool,
 }
-
 #[derive(Deserialize)]
 struct Contact {
     user_id: Option<i64>,
     phone_number: String,
 }
-
 pub async fn poll(app: App, bot: Bot) {
     let mut next = None;
     let allowed = if app.0.support_chat.is_some() {
@@ -225,7 +203,6 @@ pub async fn poll(app: App, bot: Bot) {
                 for event in events {
                     let update_id = event.update_id;
                     if let Err(error) = handle_update(&app, &bot, event).await {
-                        // Keep this update pending on a transient failure. Never log message or contact data.
                         eprintln!("telegram update retry: {error}");
                         let delay = error
                             .downcast_ref::<Rejected>()
@@ -245,7 +222,6 @@ pub async fn poll(app: App, bot: Bot) {
         }
     }
 }
-
 async fn handle_update(app: &App, bot: &Bot, event: Update) -> anyhow::Result<()> {
     if let Some(message) = event.message {
         handle(app, bot, message).await
@@ -262,16 +238,13 @@ async fn handle_update(app: &App, bot: &Bot, event: Update) -> anyhow::Result<()
         Ok(())
     }
 }
-
 pub(crate) fn remove_keyboard() -> Value {
     json!({ "remove_keyboard": true })
 }
-
 enum PhonePurpose {
     Registration,
     Change,
 }
-
 async fn phone_prompt(
     bot: &Bot,
     chat: i64,
@@ -292,7 +265,6 @@ async fn phone_prompt(
     )
     .await
 }
-
 async fn continue_auth(
     bot: &Bot,
     chat: i64,
@@ -305,7 +277,6 @@ async fn continue_auth(
         phone_prompt(bot, chat, copy, PhonePurpose::Registration).await
     }
 }
-
 #[derive(sqlx::FromRow)]
 struct BotFlow {
     id: String,
@@ -315,7 +286,6 @@ struct BotFlow {
     telegram_language_selected: bool,
     telegram_attempts: i16,
 }
-
 async fn start_in_chat(
     app: &App,
     sender: i64,
@@ -339,7 +309,6 @@ async fn start_in_chat(
         .map_err(|_| anyhow::anyhow!("registration link lookup failed"))?;
     Ok(needs_code)
 }
-
 async fn handle(app: &App, bot: &Bot, message: Message) -> anyhow::Result<()> {
     if message.chat.kind == "supergroup" && Some(message.chat.id) == app.0.support_chat {
         return support::reply(app, bot, &message).await;
@@ -353,13 +322,11 @@ async fn handle(app: &App, bot: &Bot, message: Message) -> anyhow::Result<()> {
     }
     result
 }
-
 fn private_sender(message: &Message) -> Option<&Sender> {
     message.from.as_ref().filter(|sender| {
         message.chat.kind == "private" && !sender.is_bot && message.chat.id == sender.id
     })
 }
-
 async fn handle_private(
     app: &App,
     bot: &Bot,
@@ -468,7 +435,6 @@ async fn handle_private(
             .send(chat, &base_copy.open_from_website, remove_keyboard())
             .await;
     };
-
     if !flow.telegram_language_selected {
         let Some(language) = selected else {
             drop(tx);
@@ -487,7 +453,6 @@ async fn handle_private(
         let copy = &languages.get(language).bot;
         return continue_auth(bot, chat, copy, flow.telegram_code.is_some()).await;
     }
-
     let copy = base_copy;
     if let Some(expected) = flow.telegram_code.as_deref() {
         if flow.telegram_attempts >= 5 {
@@ -509,7 +474,6 @@ async fn handle_private(
                 .map_err(|_| anyhow::anyhow!("code attempt commit failed"))?;
             return bot.send(chat, &copy.code_wrong, remove_keyboard()).await;
         }
-
         if flow.kind == "register" {
             sqlx::query("UPDATE auth_flows SET telegram_code=NULL WHERE id=$1")
                 .bind(&flow.id)
@@ -521,7 +485,6 @@ async fn handle_private(
                 .map_err(|_| anyhow::anyhow!("code confirmation commit failed"))?;
             return phone_prompt(bot, chat, copy, PhonePurpose::Registration).await;
         }
-
         let account: Option<Uuid> = sqlx::query_scalar(
             "SELECT id FROM accounts WHERE telegram_id=$1 AND deleted_at IS NULL",
         )
@@ -553,7 +516,6 @@ async fn handle_private(
         };
         return bot.send(chat, reply, remove_keyboard()).await;
     }
-
     let Some(phone) = message
         .contact
         .as_ref()
@@ -563,7 +525,6 @@ async fn handle_private(
         drop(tx);
         return phone_prompt(bot, chat, copy, PhonePurpose::Registration).await;
     };
-
     let phone_key = app.0.contacts.phone_lookup(&key(app, "phone", &phone));
     let phone_tail = app
         .0
@@ -611,7 +572,6 @@ async fn handle_private(
     };
     bot.send(chat, reply, remove_keyboard()).await
 }
-
 fn command_payload<'a>(input: &'a str, expected: &str, bot_name: &str) -> Option<&'a str> {
     let command_end = input.find(char::is_whitespace).unwrap_or(input.len());
     let (command, payload) = input.split_at(command_end);
@@ -621,7 +581,6 @@ fn command_payload<'a>(input: &'a str, expected: &str, bot_name: &str) -> Option
         }))
     .then(|| payload.trim())
 }
-
 fn is_support_message(
     message: &Message,
     languages: &crate::locale::Translations,
@@ -662,7 +621,6 @@ fn is_support_message(
         .iter()
         .any(|kind| message.extra.contains_key(*kind))
 }
-
 fn is_auth_input(input: &str, languages: &crate::locale::Translations, bot_name: &str) -> bool {
     let code = input.strip_prefix("phone_").unwrap_or(input);
     let recovery = input.split('-');
@@ -716,7 +674,6 @@ fn is_auth_input(input: &str, languages: &crate::locale::Translations, bot_name:
                 .any(|line| line == input)
             })
 }
-
 pub(crate) fn phone_number(raw: &str) -> Option<String> {
     let trimmed = raw.trim().strip_prefix('+').unwrap_or(raw.trim());
     if !trimmed
@@ -728,20 +685,16 @@ pub(crate) fn phone_number(raw: &str) -> Option<String> {
     let digits: String = trimmed.chars().filter(char::is_ascii_digit).collect();
     ((7..=15).contains(&digits.len()) && !digits.starts_with('0')).then_some(digits)
 }
-
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
+    use super::*;
+    use crate::{Config, auth::hash_password, router};
     use axum::{Json, Router, routing::post};
     use lettre::AsyncSmtpTransport;
     use reqwest::{Client, Response, StatusCode, header, multipart};
     use sqlx::PgPool;
+    use std::sync::{Arc, Mutex};
     use tokio::{net::TcpListener, sync::Semaphore};
-
-    use super::*;
-    use crate::{Config, auth::hash_password, router};
-
     struct Fixture {
         app: App,
         bot: Bot,
@@ -749,7 +702,6 @@ mod tests {
         password_hash: String,
         messages: Arc<Mutex<Vec<Value>>>,
     }
-
     async fn fixture(db: &PgPool, support_chat: Option<i64>) -> Fixture {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
@@ -835,7 +787,6 @@ mod tests {
             messages,
         }
     }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn registration_requires_own_unique_contact_and_profile(db: PgPool) {
         let Fixture {
@@ -857,7 +808,6 @@ mod tests {
                 .get(format!("{origin}/api/{path}"))
                 .header(header::COOKIE, cookie)
         };
-
         for (ticket, email, sender) in [
             ("first-test-ticket", "first@example.test", 1001),
             ("second-test-ticket", "second@example.test", 1002),
@@ -889,7 +839,6 @@ mod tests {
                 None,
                 "contact before Telegram Login"
             );
-
             let confirmed = if sender == 1001 {
                 let jar = axum_extra::extract::CookieJar::new()
                     .add(axum_extra::extract::cookie::Cookie::new("kw_flow", ticket));
@@ -939,7 +888,6 @@ mod tests {
                     "forwarded registration link"
                 );
             }
-
             deliver(&app, &bot, sender, contact.clone()).await;
             assert_eq!(
                 account_id(&db, sender).await,
@@ -975,7 +923,6 @@ mod tests {
                 );
                 deliver(&app, &bot, sender, json!({"text":code})).await;
             }
-
             deliver(
                 &app,
                 &bot,
@@ -989,7 +936,6 @@ mod tests {
                 "somebody else's contact"
             );
             deliver(&app, &bot, sender, contact).await;
-
             let result = post("auth/complete", &flow_cookie).send().await.unwrap();
             if sender == 1002 {
                 assert_eq!(result.json::<Value>().await.unwrap()["stage"], "conflict");
@@ -1018,7 +964,6 @@ mod tests {
                 get("feed", &session).send().await.unwrap().status(),
                 StatusCode::FORBIDDEN
             );
-
             let mut png = std::io::Cursor::new(Vec::new());
             image::RgbImage::from_pixel(40, 30, image::Rgb([80, 80, 80]))
                 .write_to(&mut png, image::ImageFormat::Png)
@@ -1068,7 +1013,6 @@ mod tests {
                 get("feed", &session).send().await.unwrap().status(),
                 StatusCode::OK
             );
-
             let change = post("settings/phone", &session)
                 .json(&json!({"password":"a local test password"}))
                 .send()
@@ -1156,7 +1100,6 @@ mod tests {
                 .await
                 .unwrap();
             assert!(old_retired);
-
             assert_eq!(
                 post("auth/logout", &session).send().await.unwrap().status(),
                 StatusCode::NO_CONTENT
@@ -1166,7 +1109,6 @@ mod tests {
                 StatusCode::UNAUTHORIZED
             );
         }
-
         let fallback = post("auth/telegram/bot", "")
             .json(&json!({"mode":"login","lang":"en"}))
             .send()
@@ -1217,7 +1159,6 @@ mod tests {
             StatusCode::OK
         );
     }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn support_reuses_separate_topics_and_keeps_auth_private(db: PgPool) {
         const GROUP: i64 = -1001234567890;
@@ -1240,7 +1181,6 @@ mod tests {
         ).bind(id).bind(lookup).bind(encrypted).bind(password_hash)
             .bind(&phone_lookup)
             .execute(&db).await.unwrap();
-
         deliver(
             &app,
             &bot,
@@ -1284,7 +1224,6 @@ mod tests {
             }),
         )
         .await;
-
         let recorded = || messages.lock().unwrap().clone();
         let topics = || {
             recorded()
@@ -1344,7 +1283,6 @@ mod tests {
                 (GROUP, 102, 2002, 2)
             ]
         );
-
         let staff = |details| async {
             let message = serde_json::from_value(details).unwrap();
             handle(&app, &bot, message).await.unwrap();
@@ -1386,7 +1324,6 @@ mod tests {
         assert_eq!(replies[0]["text"], "ответ от поддержки: Проверяем");
         assert_eq!(replies[1]["chat_id"], 2002);
         assert_eq!(replies[1]["text"], "reply from support: We can help");
-
         let flow = Client::new()
             .post(format!("{origin}/api/auth/telegram/bot"))
             .header(header::ORIGIN, &origin)
@@ -1430,7 +1367,6 @@ mod tests {
         assert_eq!(topics().len(), 2);
         assert_eq!(copies().len(), 5);
         assert_eq!(copies()[4]["message_thread_id"], 101);
-
         let new_email = "updated@example.test";
         let lookup = app.0.contacts.email_lookup(new_email);
         let encrypted = app.0.contacts.seal_email(new_email, &lookup).unwrap();
@@ -1502,7 +1438,6 @@ mod tests {
         for secret in [address, "test-secret", "012345"] {
             assert!(!edited.contains(secret));
         }
-
         sqlx::query("DELETE FROM accounts WHERE id=$1")
             .bind(id)
             .execute(&db)
@@ -1519,7 +1454,6 @@ mod tests {
         assert!(redacted.contains("аккаунт killerwave не привязан"));
         assert!(!redacted.contains(new_email));
     }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn bot_language_switches_in_support_and_persists_for_sign_in(db: PgPool) {
         const GROUP: i64 = -1001234567890;
@@ -1551,7 +1485,6 @@ mod tests {
             .unwrap();
             handle(&app, &bot, message)
         };
-
         deliver(&app, &bot, USER, json!({"text":"/start","message_id":1})).await;
         let welcome = last();
         assert_eq!(welcome["text"], en.support_prompt);
@@ -1584,7 +1517,6 @@ mod tests {
         deliver(&app, &bot, USER, json!({"text":"/start","message_id":5})).await;
         assert_eq!(last()["text"], ru.support_prompt);
         assert!(last()["reply_markup"].get("inline_keyboard").is_none());
-
         let flow = Client::new()
             .post(format!("{origin}/api/auth/telegram/bot"))
             .header(header::ORIGIN, &origin)
@@ -1632,7 +1564,6 @@ mod tests {
             last()["text"],
             format!("{} Проверим вопрос", en.support_reply)
         );
-
         let records = messages.lock().unwrap();
         assert_eq!(
             records
@@ -1648,7 +1579,6 @@ mod tests {
             |call| call["method"] == "answerCallbackQuery" && call["text"] == en.language_saved
         ));
     }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn support_does_not_publish_to_public_supergroups(db: PgPool) {
         const GROUP: i64 = -1009876543210;
@@ -1669,7 +1599,6 @@ mod tests {
             app.0.translations.en.bot.support_unavailable
         );
     }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn support_reactions_track_authorized_changes_on_the_original_message(db: PgPool) {
         const GROUP: i64 = -1001234567890;
@@ -1686,7 +1615,6 @@ mod tests {
             )
             .await;
         }
-
         let send = |update_id, group, copy, actor, old, new| {
             let event = serde_json::from_value(json!({
                 "update_id":update_id,"message_reaction":{
@@ -1708,7 +1636,6 @@ mod tests {
                 .cloned()
                 .collect::<Vec<_>>()
         };
-
         send(1, GROUP - 1, 1001, 3001, json!([]), emoji("👍")).await;
         send(2, GROUP, 9999, 3001, json!([]), emoji("👍")).await;
         send(3, GROUP, 1001, 3002, json!([]), emoji("👍")).await;
@@ -1729,7 +1656,6 @@ mod tests {
         assert_eq!(calls[1]["reaction"], emoji("🔥"));
         assert_eq!(calls[2]["reaction"], emoji("👍"));
         assert_eq!(calls[3]["reaction"], json!([]));
-
         let custom = json!([{"type":"custom_emoji","custom_emoji_id":"444"}]);
         send(8, GROUP, 1002, 3001, json!([]), custom.clone()).await;
         let calls = reactions();
@@ -1739,7 +1665,6 @@ mod tests {
         assert_eq!(calls[5]["chat_id"], 2002);
         assert_eq!(calls[5]["message_id"], 42);
     }
-
     async fn account_id(db: &PgPool, sender: i64) -> Option<Uuid> {
         sqlx::query_scalar("SELECT id FROM accounts WHERE telegram_id=$1 AND deleted_at IS NULL")
             .bind(sender)
@@ -1747,7 +1672,6 @@ mod tests {
             .await
             .unwrap()
     }
-
     async fn deliver(app: &App, bot: &Bot, sender: i64, details: Value) {
         let mut message = json!({
             "chat":{"id":sender,"type":"private"},
@@ -1761,7 +1685,6 @@ mod tests {
             .await
             .unwrap();
     }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn admin_bridge_permissions_moderation_and_undo(db: PgPool) {
         const GROUP: i64 = -1001234567890;
@@ -2177,7 +2100,6 @@ mod tests {
             StatusCode::UNAUTHORIZED
         );
     }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn recommended_feed_mixes_sparse_posts_and_surfaces_engagement(db: PgPool) {
         let Fixture {
@@ -2200,7 +2122,6 @@ mod tests {
             .execute(&db)
             .await
             .unwrap();
-
         let posts: Vec<_> = (100..125).map(Uuid::from_u128).collect();
         sqlx::query(
             "INSERT INTO posts(id,author_id,body,created_at)
@@ -2214,7 +2135,6 @@ mod tests {
         .execute(&db)
         .await
         .unwrap();
-
         let client = Client::new();
         let feed = |query: &'static str| {
             let request = client
@@ -2246,7 +2166,6 @@ mod tests {
         all.extend(feed("mode=recommended&offset=20").await);
         all.sort_unstable();
         assert_eq!(all, posts);
-
         let older = Uuid::from_u128(200);
         sqlx::query("INSERT INTO posts(id,author_id,body,created_at) VALUES($1,$2,'older post',now()-interval '1 day')")
             .bind(older).bind(other).execute(&db).await.unwrap();
@@ -2260,7 +2179,6 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(feed("mode=recommended").await[0], older);
-
         sqlx::query("INSERT INTO follows(follower_id,followed_id) VALUES($1,$2)")
             .bind(viewer)
             .bind(author)
@@ -2272,7 +2190,6 @@ mod tests {
             posts.into_iter().step_by(2).collect::<Vec<_>>()
         );
     }
-
     #[sqlx::test(migrations = "./migrations")]
     async fn review_accounts_use_password_login_and_cannot_become_admins(db: PgPool) {
         let Fixture {
@@ -2503,7 +2420,6 @@ mod tests {
             "totp"
         );
     }
-
     fn response_cookie(response: &Response, name: &str) -> String {
         response
             .headers()

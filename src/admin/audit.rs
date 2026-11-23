@@ -1,3 +1,11 @@
+use super::{
+    Actor, CONFLICT, DENIED, MISSING, accounts, allows_target, audit_message, mutate, ops,
+    panel_actor,
+};
+use crate::{
+    App, Result,
+    auth::{INVALID, UNAVAILABLE},
+};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -8,17 +16,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::PgConnection;
 use uuid::Uuid;
-
-use crate::{
-    App, Result,
-    auth::{INVALID, UNAVAILABLE},
-};
-
-use super::{
-    Actor, CONFLICT, DENIED, MISSING, accounts, allows_target, audit_message, mutate, ops,
-    panel_actor,
-};
-
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Entity {
@@ -29,7 +26,6 @@ pub enum Entity {
     Report,
     Role,
 }
-
 impl Entity {
     fn table(self) -> &'static str {
         match self {
@@ -41,7 +37,6 @@ impl Entity {
             Self::Role => "admin_roles",
         }
     }
-
     fn matching(self) -> &'static str {
         match self {
             Self::Attachment => "t.post_id=$1 AND t.position=$2",
@@ -51,7 +46,6 @@ impl Entity {
         }
     }
 }
-
 #[derive(Serialize, Deserialize)]
 pub struct Change {
     pub entity: Entity,
@@ -61,13 +55,11 @@ pub struct Change {
     pub before: Value,
     pub after: Value,
 }
-
 #[derive(Serialize, Deserialize)]
 pub enum Undo {
     Changes(Vec<Change>),
     Environment { before: Value, after: Value },
 }
-
 pub async fn snapshot(
     db: &mut PgConnection,
     entity: Entity,
@@ -87,7 +79,6 @@ pub async fn snapshot(
         .await?
         .ok_or(MISSING)
 }
-
 pub async fn change(
     db: &mut PgConnection,
     entity: Entity,
@@ -114,8 +105,6 @@ pub async fn change(
         after,
     })
 }
-
-// Column names come from operation-specific server-side JSON objects and authenticated undo records.
 async fn write_values(
     db: &mut PgConnection,
     entity: Entity,
@@ -159,7 +148,6 @@ async fn write_values(
         })?;
     Ok(())
 }
-
 const CHANGES: &[&str] = &[
     "review_account_create",
     "profile",
@@ -179,7 +167,6 @@ const CHANGES: &[&str] = &[
     "restart",
     "env",
 ];
-
 pub async fn append(
     db: &mut PgConnection,
     app: &App,
@@ -197,7 +184,6 @@ pub async fn append(
     );
     insert(db, app, actor, action, target, details, undo).await
 }
-
 async fn insert(
     db: &mut PgConnection,
     app: &App,
@@ -220,12 +206,10 @@ async fn insert(
         .execute(db).await?;
     Ok(id)
 }
-
 #[derive(Deserialize)]
 pub struct Page {
     pub offset: Option<i64>,
 }
-
 pub async fn history(
     State(app): State<App>,
     jar: CookieJar,
@@ -241,7 +225,6 @@ pub async fn history(
     ).bind(page.offset.unwrap_or(0).clamp(0,1_000_000)).bind(CHANGES).fetch_all(&app.0.db).await?;
     Ok(Json(events))
 }
-
 pub async fn undo(
     State(app): State<App>,
     jar: CookieJar,
@@ -333,7 +316,6 @@ pub async fn undo(
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 pub async fn deliver_audit(app: App) {
     let Some(bot) = app.0.bot.as_ref() else {
         return;

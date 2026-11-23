@@ -47,7 +47,6 @@ ranked AS (
                     AND l.created_at > now() - interval '90 days'
               ) THEN 1.0 ELSE 0 END
               - ln(1.0 + greatest(extract(epoch FROM now() - created_at), 0) / 129600.0)
-              -- Give posts with similar signals a repeatable order for this viewer.
               + 1.15 * ((hashtextextended(id::text, hashtextextended($1::text, 0)) & 65535) / 65536.0)
        END AS interest
     FROM signals

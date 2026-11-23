@@ -1,8 +1,8 @@
-use std::{
-    env,
-    time::{Duration, SystemTime},
+use crate::{
+    ApiError, App, Result,
+    auth::{RATE, UNAVAILABLE},
+    profile,
 };
-
 use aws_credential_types::Credentials;
 use aws_sigv4::{
     http_request::{
@@ -19,14 +19,11 @@ use axum::{
 };
 use reqwest::{Client, Url};
 use sqlx::{PgConnection, PgPool};
-use uuid::Uuid;
-
-use crate::{
-    ApiError, App, Result,
-    auth::{RATE, UNAVAILABLE},
-    profile,
+use std::{
+    env,
+    time::{Duration, SystemTime},
 };
-
+use uuid::Uuid;
 const MIB: usize = 1024 * 1024;
 pub const IMAGE_LIMIT: usize = 5 * MIB;
 pub const POST_LIMIT: usize = 96 * MIB;
@@ -35,14 +32,12 @@ pub const INVALID_MEDIA: ApiError = ApiError(StatusCode::BAD_REQUEST, "post_medi
 const STORAGE_UNAVAILABLE: ApiError =
     ApiError(StatusCode::SERVICE_UNAVAILABLE, "media_unavailable");
 const IMAGE_MIME: &str = "image/webp";
-
 pub struct Store {
     client: Client,
     bucket: Url,
     region: String,
     credentials: Credentials,
 }
-
 impl Store {
     pub fn from_env(secure: bool) -> anyhow::Result<Option<Self>> {
         let read = |name| env::var(name).ok().filter(|value| !value.is_empty());
@@ -99,7 +94,6 @@ impl Store {
             ),
         }))
     }
-
     async fn send(
         &self,
         method: Method,
@@ -155,14 +149,12 @@ impl Store {
         request.send().await.map_err(|_| STORAGE_UNAVAILABLE)
     }
 }
-
 pub struct Upload {
     pub mime: &'static str,
     pub kind: &'static str,
     pub title: String,
     pub bytes: Bytes,
 }
-
 pub async fn read(mut field: Field<'_>, limit: usize, invalid: ApiError) -> Result<Bytes> {
     let mut data = Vec::new();
     let error = || ApiError(invalid.0, invalid.1);
@@ -174,7 +166,6 @@ pub async fn read(mut field: Field<'_>, limit: usize, invalid: ApiError) -> Resu
     }
     Ok(Bytes::from(data))
 }
-
 pub async fn photo(app: &App, bytes: Bytes, avatar: bool, invalid: ApiError) -> Result<Upload> {
     let permit = app
         .0
@@ -196,7 +187,6 @@ pub async fn photo(app: &App, bytes: Bytes, avatar: bool, invalid: ApiError) -> 
         bytes: Bytes::from(bytes),
     })
 }
-
 pub async fn attachment(app: &App, field: Field<'_>, legacy_image: bool) -> Result<Upload> {
     let mime = field.content_type().unwrap_or_default().to_owned();
     let title = field
@@ -251,7 +241,6 @@ pub async fn attachment(app: &App, field: Field<'_>, legacy_image: bool) -> Resu
         bytes,
     })
 }
-
 pub async fn stage(app: &App, upload: &Upload) -> Result<Uuid> {
     let store = app.0.media.as_ref().ok_or(STORAGE_UNAVAILABLE)?;
     let id = Uuid::new_v4();
@@ -278,7 +267,6 @@ pub async fn stage(app: &App, upload: &Upload) -> Result<Uuid> {
         .await?;
     Ok(id)
 }
-
 pub async fn retain(db: &mut PgConnection, id: Uuid) -> Result<()> {
     let deleted = sqlx::query("DELETE FROM media_gc WHERE object_id=$1 AND delete_after > now()")
         .bind(id)
@@ -290,7 +278,6 @@ pub async fn retain(db: &mut PgConnection, id: Uuid) -> Result<()> {
     }
     Ok(())
 }
-
 pub async fn serve(app: &App, id: Uuid, mime: &str, headers: &HeaderMap) -> Result<Response> {
     let store = app.0.media.as_ref().ok_or(STORAGE_UNAVAILABLE)?;
     let range = headers
@@ -324,7 +311,6 @@ pub async fn serve(app: &App, id: Uuid, mime: &str, headers: &HeaderMap) -> Resu
     };
     result.body(body).map_err(|_| STORAGE_UNAVAILABLE)
 }
-
 pub fn legacy_image(data: Vec<u8>) -> Response {
     (
         [
@@ -335,7 +321,6 @@ pub fn legacy_image(data: Vec<u8>) -> Response {
     )
         .into_response()
 }
-
 pub async fn collect(app: App) {
     let Some(store) = app.0.media.as_ref() else {
         return;
@@ -349,7 +334,6 @@ pub async fn collect(app: App) {
         }
     }
 }
-
 async fn collect_due(store: &Store, db: &PgPool) -> Result<()> {
     for _ in 0..20 {
         let mut tx = db.begin().await?;
@@ -381,7 +365,6 @@ async fn collect_due(store: &Store, db: &PgPool) -> Result<()> {
     }
     Ok(())
 }
-
 pub async fn measure(app: App) {
     let Some(store) = app.0.media.as_ref() else {
         return;

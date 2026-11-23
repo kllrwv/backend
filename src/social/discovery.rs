@@ -1,3 +1,4 @@
+use crate::{App, Result, auth::INVALID, profile};
 use axum::{
     Json,
     extract::{Query, State},
@@ -5,21 +6,16 @@ use axum::{
 use axum_extra::extract::CookieJar;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-use crate::{App, Result, auth::INVALID, profile};
-
 #[derive(Deserialize)]
 pub struct SearchQuery {
     #[serde(default)]
     q: String,
 }
-
 #[derive(Serialize, sqlx::FromRow)]
 struct Tag {
     tag: String,
     posts: i64,
 }
-
 #[derive(Serialize, sqlx::FromRow)]
 struct Person {
     id: Uuid,
@@ -31,13 +27,11 @@ struct Person {
     followed: bool,
     mine: bool,
 }
-
 #[derive(Serialize)]
 pub struct Discovery {
     tags: Vec<Tag>,
     people: Vec<Person>,
 }
-
 pub async fn search(
     State(app): State<App>,
     jar: CookieJar,
@@ -48,7 +42,6 @@ pub async fn search(
     if term.chars().count() > 100 {
         return Err(INVALID);
     }
-
     let tags = if term.starts_with('@') {
         Vec::new()
     } else {
@@ -83,7 +76,6 @@ pub async fn search(
     };
     Ok(Json(Discovery { tags, people }))
 }
-
 pub fn normalized_tag(tag: &str) -> Result<String> {
     let tag = tag
         .trim()

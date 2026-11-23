@@ -1,11 +1,8 @@
+use super::{Bot, Chat, PhonePurpose, Sender, continue_auth, phone_prompt, support};
+use crate::{App, auth::security};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::PgConnection;
-
-use crate::{App, auth::security};
-
-use super::{Bot, Chat, PhonePurpose, Sender, continue_auth, phone_prompt, support};
-
 #[derive(Deserialize)]
 pub(super) struct Callback {
     id: String,
@@ -13,12 +10,10 @@ pub(super) struct Callback {
     data: Option<String>,
     message: Option<CallbackMessage>,
 }
-
 #[derive(Deserialize)]
 struct CallbackMessage {
     chat: Chat,
 }
-
 pub(super) fn default(sender: &Sender) -> &'static str {
     if sender
         .language_code
@@ -30,7 +25,6 @@ pub(super) fn default(sender: &Sender) -> &'static str {
         "en"
     }
 }
-
 pub(super) async fn saved(app: &App, user: i64) -> anyhow::Result<Option<String>> {
     Ok(
         sqlx::query_scalar("SELECT lang FROM telegram_bot_languages WHERE user_id=$1")
@@ -39,7 +33,6 @@ pub(super) async fn saved(app: &App, user: i64) -> anyhow::Result<Option<String>
             .await?,
     )
 }
-
 pub(super) async fn save(db: &mut PgConnection, user: i64, lang: &str) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO telegram_bot_languages(user_id,lang) VALUES ($1,$2)
@@ -51,7 +44,6 @@ pub(super) async fn save(db: &mut PgConnection, user: i64, lang: &str) -> anyhow
     .await?;
     Ok(())
 }
-
 pub(super) fn picker(app: &App) -> Value {
     let t = &app.0.translations;
     json!({"inline_keyboard": [[
@@ -59,7 +51,6 @@ pub(super) fn picker(app: &App) -> Value {
         {"text": t.en.bot.language_button, "callback_data": "lang:en"},
     ]]})
 }
-
 pub(super) async fn choose(app: &App, bot: &Bot, chat: i64, lang: &str) -> anyhow::Result<()> {
     bot.send(
         chat,
@@ -68,7 +59,6 @@ pub(super) async fn choose(app: &App, bot: &Bot, chat: i64, lang: &str) -> anyho
     )
     .await
 }
-
 pub(super) async fn handle(app: &App, bot: &Bot, callback: Callback) -> anyhow::Result<()> {
     let sender = &callback.from;
     if sender.is_bot
@@ -105,7 +95,6 @@ pub(super) async fn handle(app: &App, bot: &Bot, callback: Callback) -> anyhow::
         .await?
     };
     tx.commit().await?;
-
     let copy = &app.0.translations.get(lang).bot;
     if let Err(error) = bot
         .call::<bool>(

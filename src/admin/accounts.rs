@@ -1,3 +1,13 @@
+use super::{
+    CONFLICT, DENIED, MISSING, PERMISSIONS, allows_target,
+    audit::{self, Entity, Undo},
+    mutate, panel_actor,
+};
+use crate::{
+    ApiError, App, Result,
+    auth::{self, INVALID, RATE, UNAVAILABLE},
+    media, profile,
+};
 use axum::{
     Json,
     extract::{Multipart, Path, Query, State},
@@ -9,31 +19,17 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::PgConnection;
 use uuid::Uuid;
-
-use super::{
-    CONFLICT, DENIED, MISSING, PERMISSIONS, allows_target,
-    audit::{self, Entity, Undo},
-    mutate, panel_actor,
-};
-use crate::{
-    ApiError, App, Result,
-    auth::{self, INVALID, RATE, UNAVAILABLE},
-    media, profile,
-};
-
 #[derive(Deserialize)]
 pub struct Search {
     q: Option<String>,
     offset: Option<i64>,
 }
-
 #[derive(Deserialize)]
 pub struct ReviewAccountDraft {
     name: String,
     username: String,
     password: String,
 }
-
 pub async fn create_review(
     State(app): State<App>,
     jar: CookieJar,
@@ -63,7 +59,6 @@ pub async fn create_review(
     .await
     .map_err(|_| UNAVAILABLE)?
     .map_err(|_| UNAVAILABLE)?;
-
     let (mut tx, actor) = mutate(&app.0.db, &actor, permit).await?;
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO accounts(id,username,display_name,password_hash,review_account)
@@ -91,7 +86,6 @@ pub async fn create_review(
         Json(json!({"id":id,"username":username})),
     ))
 }
-
 pub async fn list(
     State(app): State<App>,
     jar: CookieJar,
@@ -128,7 +122,6 @@ pub async fn list(
         .bind(input.offset.unwrap_or(0).clamp(0,1_000_000)).fetch_all(&app.0.db).await?;
     Ok(Json(accounts))
 }
-
 pub async fn details(
     State(app): State<App>,
     jar: CookieJar,
@@ -195,7 +188,6 @@ pub async fn details(
     }
     Ok(Json(account))
 }
-
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Edit {
@@ -232,7 +224,6 @@ pub enum Edit {
     RemoveAvatar,
     RemoveBanner,
 }
-
 impl Edit {
     fn permit(&self) -> &'static str {
         match self {
@@ -248,7 +239,6 @@ impl Edit {
         }
     }
 }
-
 pub async fn edit(
     State(app): State<App>,
     jar: CookieJar,
@@ -431,7 +421,6 @@ pub async fn edit(
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 fn bytea(bytes: &[u8]) -> String {
     use std::fmt::Write;
     let mut hex = String::from("\\x");
@@ -440,14 +429,12 @@ fn bytea(bytes: &[u8]) -> String {
     }
     hex
 }
-
 async fn contact_lock(db: &mut PgConnection) -> Result<()> {
     sqlx::query("SELECT pg_advisory_xact_lock(73460650021401)")
         .execute(db)
         .await?;
     Ok(())
 }
-
 async fn revoke_security(db: &mut PgConnection, id: Uuid, action: &str) -> Result<u64> {
     let removed = sqlx::query("DELETE FROM sessions WHERE account_id=$1")
         .bind(id)
@@ -465,7 +452,6 @@ async fn revoke_security(db: &mut PgConnection, id: Uuid, action: &str) -> Resul
     }
     Ok(removed)
 }
-
 pub async fn prepare_restore(db: &mut PgConnection, before: &Value, after: &Value) -> Result<()> {
     if before.get("email_lookup").is_some() || before.get("phone_key").is_some() {
         contact_lock(db).await?;
@@ -483,7 +469,6 @@ pub async fn prepare_restore(db: &mut PgConnection, before: &Value, after: &Valu
     }
     Ok(())
 }
-
 pub async fn finish_restore(db: &mut PgConnection, before: &Value, after: &Value) -> Result<()> {
     if let Some(old) = before["avatar_object_id"]
         .as_str()
@@ -496,7 +481,6 @@ pub async fn finish_restore(db: &mut PgConnection, before: &Value, after: &Value
     }
     reschedule_avatar(db, after).await
 }
-
 async fn reschedule_avatar(db: &mut PgConnection, previous: &Value) -> Result<()> {
     if let Some(id) = previous["avatar_object_id"]
         .as_str()
@@ -509,7 +493,6 @@ async fn reschedule_avatar(db: &mut PgConnection, previous: &Value) -> Result<()
     }
     Ok(())
 }
-
 pub async fn upload_avatar(
     State(app): State<App>,
     jar: CookieJar,
@@ -559,7 +542,6 @@ pub async fn upload_avatar(
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
-
 pub async fn avatar(
     State(app): State<App>,
     jar: CookieJar,
@@ -569,12 +551,10 @@ pub async fn avatar(
     panel_actor(&app, &jar, Some("accounts.read")).await?;
     profile::serve_avatar(&app, id, &headers).await
 }
-
 #[derive(Deserialize)]
 pub struct Assign {
     permissions: Vec<String>,
 }
-
 pub async fn roles(State(app): State<App>, jar: CookieJar) -> Result<Json<Vec<Value>>> {
     let actor = panel_actor(&app, &jar, None).await?;
     if !actor.allows("admins.read") && !actor.allows("admins.grant") {
@@ -587,7 +567,6 @@ pub async fn roles(State(app): State<App>, jar: CookieJar) -> Result<Json<Vec<Va
     ).fetch_all(&app.0.db).await?;
     Ok(Json(roles))
 }
-
 pub async fn assign(
     State(app): State<App>,
     jar: CookieJar,
