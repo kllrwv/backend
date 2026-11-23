@@ -1,0 +1,11 @@
+[Unit]
+Description=Killerwave host metrics and allowlisted operations
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/killerwave
+ExecStart=/usr/bin/python3 /root/killerwave/deploy/ops.py
+UMask=0077
+NoNewPrivileges=yes

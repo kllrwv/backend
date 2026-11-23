@@ -1,0 +1,1 @@
+DROP TABLE telegram_support_reply_buttons;

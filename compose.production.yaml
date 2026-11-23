@@ -1,0 +1,97 @@
+name: killerwave
+services:
+  gateway:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ${KILLERWAVE_FRONTEND_DIR:-../frontend}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/status').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    init: true
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: ${KILLERWAVE_ADMIN_DIR:-../admin}
+    environment:
+      KILLERWAVE_SOCIAL_ORIGIN: https://killerwave.xyz
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/control').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    init: true
+    restart: unless-stopped
+
+  api:
+    build: .
+    env_file:
+      - ./.env
+    environment:
+      APP_ORIGIN: https://killerwave.xyz
+      ADMIN_ORIGIN: https://admin.killerwave.xyz
+      ADMIN_OPS_DIR: /ops
+      DATABASE_URL: postgres://killerwave:${KW_POSTGRES_PASSWORD:?set KW_POSTGRES_PASSWORD in .env}@postgres:5432/killerwave
+      API_BIND: 0.0.0.0:18080
+      LOCALIZATIONS_PATH: /app/translations.json
+    volumes:
+      - type: bind
+        source: ./translations.json
+        target: /app/translations.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./ops-state:/ops
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "3", "http://127.0.0.1:18080/api/health"]
+      interval: 15s
+      timeout: 4s
+      retries: 5
+      start_period: 10s
+    init: true
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: killerwave
+      POSTGRES_PASSWORD: ${KW_POSTGRES_PASSWORD:?set KW_POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: killerwave
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U killerwave -d killerwave"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  postgres:
+  caddy_data:
+  caddy_config:
