@@ -21,6 +21,8 @@ services:
   web:
     build:
       context: ${KILLERWAVE_FRONTEND_DIR:-../frontend}
+    environment:
+      KILLERWAVE_IOS_APPLICATION_IDENTIFIER: ${KILLERWAVE_IOS_APPLICATION_IDENTIFIER:-}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/status').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
       interval: 15s
