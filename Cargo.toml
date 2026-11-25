@@ -29,5 +29,6 @@ subtle = "2"
 time = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "sync"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+web-push-native = "0.5.0"
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["multipart"] }

@@ -10,6 +10,18 @@ pub struct Translations {
 pub struct Locale {
     pub bot: Bot,
     pub email: Email,
+    #[serde(rename = "webPush")]
+    pub web_push: WebPush,
+}
+#[derive(Deserialize)]
+pub struct WebPush {
+    pub events: HashMap<String, PushText>,
+    pub reminders: Vec<PushText>,
+}
+#[derive(Deserialize)]
+pub struct PushText {
+    pub title: String,
+    pub body: String,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

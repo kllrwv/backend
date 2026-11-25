@@ -3,6 +3,7 @@ mod auth;
 mod locale;
 mod media;
 mod profile;
+mod push;
 mod social;
 mod status;
 mod telegram;
@@ -37,6 +38,7 @@ struct Config {
     mailer: AsyncSmtpTransport<Tokio1Executor>,
     sender: Mailbox,
     translations: locale::Translations,
+    push: Option<push::Service>,
     bot: Option<telegram::Bot>,
     support_chat: Option<i64>,
     telegram_web: Option<web::Provider>,
@@ -123,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
             None
         }
     };
+    let push = push::Service::from_env(&origin)?;
     let app = App(Arc::new(Config {
         db,
         origin,
@@ -135,6 +138,7 @@ async fn main() -> anyhow::Result<()> {
             .build(),
         sender: env::var("SMTP_FROM")?.parse()?,
         translations: locale::Translations::load()?,
+        push,
         bot,
         support_chat: support::chat_from_env()?,
         telegram_web: web::Provider::from_env()?,
@@ -152,6 +156,9 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(admin::deliver_audit(app.clone()));
     }
     tokio::spawn(cleanup(app.clone()));
+    if app.0.push.is_some() {
+        tokio::spawn(push::run(app.clone()));
+    }
     tokio::spawn(status::monitor(app.clone()));
     tokio::spawn(media::collect(app.clone()));
     tokio::spawn(media::measure(app.clone()));
@@ -238,6 +245,7 @@ fn router(app: App) -> Router {
         .route("/api/accounts/{id}/follow", post(social::follow))
         .route("/api/status", get(status::show))
         .merge(admin::routes())
+        .merge(push::routes())
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn_with_state(app.clone(), browser_request))
         .with_state(app)
