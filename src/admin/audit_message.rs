@@ -270,6 +270,14 @@ pub async fn describe(
         );
     }
     differences(t, &mut lines, action, undo, reversed);
+    if let Some(Undo::Alias(change)) = undo {
+        let (before, after) = if reversed { (&change.after, &change.before) } else { (&change.before, &change.after) };
+        for (field, alias) in [("previous_username", before), ("new_username", after)] {
+            if let Some(alias) = alias {
+                line(&mut lines, label(&t.fields, field, &t.target), format_args!("@{}", short_text(&alias.username)));
+            }
+        }
+    }
     match action {
         "remove" => outcome(
             t,

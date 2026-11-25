@@ -21,7 +21,9 @@ WITH candidates AS MATERIALIZED (
       AND ($6 = '' OR EXISTS (
           SELECT 1 FROM post_hashtags WHERE post_id = p.id AND tag = $6))
       AND ($4 = '' OR strpos(lower(p.body), lower($4)) > 0
-          OR strpos(lower(a.username), lower($4)) > 0 OR strpos(lower(a.display_name), lower($4)) > 0)
+          OR strpos(lower(a.username), lower($4)) > 0 OR strpos(lower(a.display_name), lower($4)) > 0
+          OR EXISTS (SELECT 1 FROM account_usernames h WHERE h.account_id=a.id AND h.slot>0 AND h.enabled
+              AND a.deleted_at IS NULL AND strpos(h.username,lower(nullif(ltrim($4,'@'),'')))>0))
     ORDER BY p.created_at DESC, p.id DESC
     LIMIT CASE WHEN $3 IS NULL THEN 400 END
 ),

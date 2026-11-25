@@ -1,4 +1,5 @@
 mod accounts;
+mod aliases;
 mod audit;
 mod audit_message;
 mod moderation;
@@ -23,6 +24,7 @@ pub const PERMISSIONS: &[&str] = &[
     "accounts.review.create",
     "accounts.contacts.read",
     "accounts.profile.write",
+    aliases::PERMISSION,
     "accounts.badge",
     "accounts.contacts.write",
     "accounts.telegram.write",
@@ -287,6 +289,7 @@ pub fn routes() -> Router<App> {
                 .layer(DefaultBodyLimit::max(crate::media::IMAGE_LIMIT + 16 * 1024)),
         )
         .route("/api/admin/roles", get(accounts::roles))
+        .route("/api/admin/accounts/{id}/usernames", get(aliases::list).post(aliases::edit))
         .route("/api/admin/roles/{id}", post(accounts::assign))
         .route("/api/admin/reports", get(moderation::queue))
         .route("/api/admin/reports/{id}/review", post(moderation::review))

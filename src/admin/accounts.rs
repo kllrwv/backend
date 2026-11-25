@@ -68,7 +68,7 @@ pub async fn create_review(
     .bind(name)
     .bind(hash)
     .fetch_optional(&mut *tx)
-    .await?
+    .await.map_err(profile::aliases::conflict)?
     .ok_or(CONFLICT)?;
     audit::append(
         &mut tx,
@@ -91,7 +91,10 @@ pub async fn list(
     jar: CookieJar,
     Query(input): Query<Search>,
 ) -> Result<Json<Vec<Value>>> {
-    let actor = panel_actor(&app, &jar, Some("accounts.read")).await?;
+    let actor = panel_actor(&app, &jar, None).await?;
+    if !actor.allows("accounts.read") && !actor.allows(super::aliases::PERMISSION) {
+        return Err(DENIED);
+    }
     let q = input.q.as_deref().unwrap_or("").trim().to_lowercase();
     if q.chars().count() > 120 {
         return Err(INVALID);
@@ -114,10 +117,11 @@ pub async fn list(
         "SELECT jsonb_build_object('id',id,'username',username,'name',display_name,'verified',verified,
               'deleted',deleted_at IS NOT NULL,'avatar',avatar IS NOT NULL OR avatar_object_id IS NOT NULL,
               'review_account',review_account)
-         FROM accounts WHERE $1='' OR strpos(coalesce(username,''),$1)>0 OR strpos(coalesce(display_name,''),$1)>0
+         FROM accounts a WHERE $1='' OR strpos(coalesce(username,''),$1)>0 OR strpos(lower(coalesce(display_name,'')),$1)>0
+            OR EXISTS (SELECT 1 FROM account_usernames h WHERE h.account_id=a.id AND h.slot>0 AND h.enabled AND a.deleted_at IS NULL AND strpos(h.username,$1)>0)
             OR id::text=$1 OR (telegram_id::text=$1 AND $2)
             OR email_lookup=$3 OR phone_key=$4
-         ORDER BY created_at DESC,id DESC LIMIT 50 OFFSET $5",
+         ORDER BY (username=$1 OR EXISTS (SELECT 1 FROM account_usernames h WHERE h.account_id=a.id AND h.enabled AND h.username=$1 AND a.deleted_at IS NULL)) DESC NULLS LAST,created_at DESC,id DESC LIMIT 50 OFFSET $5",
     ).bind(q.trim_start_matches('@')).bind(actor.allows("accounts.contacts.read")).bind(lookup).bind(phone)
         .bind(input.offset.unwrap_or(0).clamp(0,1_000_000)).fetch_all(&app.0.db).await?;
     Ok(Json(accounts))
@@ -575,16 +579,14 @@ pub async fn assign(
 ) -> Result<StatusCode> {
     let actor = panel_actor(&app, &jar, Some("admins.grant")).await?;
     let (mut tx, actor) = mutate(&app.0.db, &actor, "admins.grant").await?;
-    let id: Uuid = if let Ok(id) = Uuid::parse_str(&handle) {
-        id
-    } else {
-        let handle = auth::username(&handle).ok_or(INVALID)?;
-        sqlx::query_scalar("SELECT id FROM accounts WHERE username=$1 AND deleted_at IS NULL")
-            .bind(handle)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(MISSING)?
-    };
+    let target_id = Uuid::parse_str(&handle).ok();
+    let username = profile::aliases::normalize(&handle).ok();
+    if target_id.is_none() && username.is_none() { return Err(INVALID); }
+    let id: Uuid = sqlx::query_scalar(
+        "SELECT a.id FROM accounts a WHERE a.deleted_at IS NULL AND (a.id=$1 OR a.id=(
+            SELECT account_id FROM account_usernames WHERE username=$2 AND enabled))
+         ORDER BY (a.id=$1) DESC NULLS LAST LIMIT 1",
+    ).bind(target_id).bind(username).fetch_optional(&mut *tx).await?.ok_or(MISSING)?;
     if actor.id == id
         || input
             .permissions

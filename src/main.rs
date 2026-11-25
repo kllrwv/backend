@@ -201,6 +201,7 @@ fn router(app: App) -> Router {
             get(community::preferences).post(community::set_preference),
         )
         .route("/api/settings/blocked", get(community::blocked))
+        .route("/api/settings/usernames", get(profile::aliases::own).post(profile::aliases::toggle))
         .route("/api/settings/security", get(security::summary))
         .route("/api/settings/totp/start", post(totp::start))
         .route("/api/settings/totp/confirm", post(totp::confirm))

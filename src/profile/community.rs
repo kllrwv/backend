@@ -23,6 +23,7 @@ pub struct View {
     bio: String,
     avatar: bool,
     verified: bool,
+    aliases: Vec<String>,
     deleted: bool,
     banner: Option<Uuid>,
     mine: bool,
@@ -47,6 +48,7 @@ pub async fn view(
         "SELECT a.id, a.username, a.display_name AS name, a.bio,
           NOT a.avatar_hidden AND (a.avatar IS NOT NULL OR a.avatar_object_id IS NOT NULL) AS avatar,
           a.verified,a.deleted_at IS NOT NULL AS deleted, CASE WHEN NOT a.banner_hidden THEN a.banner_object_id END AS banner,
+          ARRAY(SELECT h.username FROM account_usernames h WHERE h.account_id=a.id AND h.slot>0 AND h.enabled AND a.deleted_at IS NULL ORDER BY h.slot) AS aliases,
           a.id=v.id AS mine,
           EXISTS (SELECT 1 FROM follows WHERE follower_id=v.id AND followed_id=a.id) AS followed,
           (SELECT count(*) FROM follows WHERE follower_id=a.id) AS following,
@@ -57,7 +59,8 @@ pub async fn view(
           audience_allows(a.id,v.id,a.like_access) AS can_see_likes,
           CASE WHEN a.id=v.id THEN a.theme END AS theme
          FROM accounts a JOIN accounts v ON v.id=$1 WHERE a.username IS NOT NULL
-          AND ($2='me' AND a.id=v.id OR $2<>'me' AND (a.id=$3 OR a.username=$2))
+          AND ($2='me' AND a.id=v.id OR $2<>'me' AND (a.id=$3 OR a.id=(
+              SELECT account_id FROM account_usernames WHERE username=$2 AND enabled AND (slot=0 OR a.deleted_at IS NULL))))
           AND NOT accounts_blocked(a.id,v.id)
           AND (a.deleted_at IS NULL OR admin_can(v.id,'accounts.lifecycle') OR admin_can(v.id,'accounts.read') OR admin_can(v.id,'content.moderate'))
          ORDER BY (a.id=$3) DESC NULLS LAST LIMIT 1",

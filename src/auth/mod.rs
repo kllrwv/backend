@@ -230,15 +230,20 @@ pub async fn login(
         return Err(INVALID);
     }
     rate(&app, "login budget", 100, 60).await?;
-    rate(&app, &format!("login:{identity}"), 12, 900).await?;
     let account: Option<(Uuid, Option<String>, Option<Vec<u8>>, String)> = sqlx::query_as(
         "SELECT id, email_lookup, email_ciphertext, password_hash FROM accounts
-         WHERE deleted_at IS NULL AND (($2 AND email_lookup=$1) OR (NOT $2 AND username=$1))",
+         WHERE deleted_at IS NULL AND (($2 AND email_lookup=$1) OR (NOT $2 AND id=(
+             SELECT account_id FROM account_usernames WHERE username=$1 AND enabled)))",
     )
     .bind(&identity)
     .bind(email_login)
     .fetch_optional(&app.0.db)
     .await?;
+    let rate_key = match &account {
+        Some((id, ..)) => format!("login-account:{id}"),
+        None => format!("login:{identity}"),
+    };
+    rate(&app, &rate_key, 12, 900).await?;
     let hash = account
         .as_ref()
         .map_or_else(|| app.0.dummy_hash.clone(), |row| row.3.clone());

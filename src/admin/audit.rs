@@ -1,5 +1,5 @@
 use super::{
-    Actor, CONFLICT, DENIED, MISSING, accounts, allows_target, audit_message, mutate, ops,
+    Actor, CONFLICT, DENIED, MISSING, accounts, aliases, allows_target, audit_message, mutate, ops,
     panel_actor,
 };
 use crate::{
@@ -58,6 +58,7 @@ pub struct Change {
 #[derive(Serialize, Deserialize)]
 pub enum Undo {
     Changes(Vec<Change>),
+    Alias(aliases::AliasChange),
     Environment { before: Value, after: Value },
 }
 pub async fn snapshot(
@@ -151,6 +152,9 @@ async fn write_values(
 const CHANGES: &[&str] = &[
     "review_account_create",
     "profile",
+    "alias_add",
+    "alias_rename",
+    "alias_remove",
     "email",
     "phone",
     "telegram",
@@ -292,6 +296,7 @@ pub async fn undo(
             actor.require("ops.env.write")?;
             ops::queue_env_undo(&app, &mut tx, before.clone(), after.clone()).await?;
         }
+        Undo::Alias(change) => aliases::restore(&mut tx, &actor, change).await?,
     }
     let summary =
         audit_message::describe(&mut tx, &app, &action, target, &details, Some(&undo), true)

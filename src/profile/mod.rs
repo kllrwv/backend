@@ -1,3 +1,4 @@
+pub(crate) mod aliases;
 pub(crate) mod community;
 use crate::{
     ApiError, App, Result,

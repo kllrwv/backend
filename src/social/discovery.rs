@@ -20,6 +20,7 @@ struct Tag {
 struct Person {
     id: Uuid,
     username: String,
+    matched_username: Option<String>,
     name: String,
     avatar: bool,
     verified: bool,
@@ -60,16 +61,20 @@ pub async fn search(
         Vec::new()
     } else {
         sqlx::query_as(
-            "SELECT id, username, display_name AS name,
+            "SELECT a.id, a.username, nullif(matched.username,a.username) AS matched_username, display_name AS name,
                     NOT avatar_hidden AND (avatar IS NOT NULL OR avatar_object_id IS NOT NULL) AS avatar, id = $2 AS mine,
                     verified, deleted_at IS NOT NULL AS deleted,
                     EXISTS(SELECT 1 FROM follows WHERE follower_id = $2 AND followed_id = a.id) AS followed
-             FROM accounts a WHERE username IS NOT NULL AND display_name IS NOT NULL
+             FROM accounts a LEFT JOIN LATERAL (
+                SELECT h.username FROM account_usernames h
+                WHERE h.account_id=a.id AND h.enabled AND (h.slot=0 OR a.deleted_at IS NULL) AND strpos(h.username,$1)>0
+                ORDER BY (h.username=$1) DESC, (strpos(h.username,$1)=1) DESC, h.slot LIMIT 1
+             ) matched ON true WHERE a.username IS NOT NULL AND display_name IS NOT NULL
               AND NOT accounts_blocked(id,$2)
               AND (deleted_at IS NULL OR admin_can($2,'accounts.lifecycle') OR admin_can($2,'accounts.read'))
-              AND (strpos(lower(username), $1) > 0 OR ($3 AND strpos(lower(display_name), $1) > 0))
-             ORDER BY (lower(username) = $1) DESC, (lower(display_name) = $1) DESC,
-                      (strpos(lower(username), $1) = 1) DESC, username, id LIMIT 20",
+              AND (matched.username IS NOT NULL OR ($3 AND strpos(lower(display_name), $1) > 0))
+             ORDER BY (matched.username=$1) DESC NULLS LAST, (lower(display_name)=$1) DESC,
+                      (strpos(matched.username,$1)=1) DESC NULLS LAST, a.username, a.id LIMIT 20",
         )
         .bind(term.strip_prefix('@').unwrap_or(&term)).bind(viewer.id).bind(!term.starts_with('@'))
         .fetch_all(&app.0.db).await?
