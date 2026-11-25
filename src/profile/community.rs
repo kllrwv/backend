@@ -64,6 +64,65 @@ pub async fn view(
     ).bind(viewer.id).bind(handle).bind(target_id).fetch_optional(&app.0.db).await?.ok_or(MISSING)?;
     Ok(Json(view))
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionDirection {
+    Followers,
+    Following,
+}
+#[derive(Deserialize)]
+pub struct ConnectionQuery {
+    after: Option<String>,
+}
+#[derive(Deserialize, Serialize)]
+struct Connection {
+    id: Uuid,
+    username: String,
+    name: String,
+    avatar: bool,
+    verified: bool,
+    mine: bool,
+    followed: bool,
+    followers: i64,
+}
+#[derive(Serialize)]
+pub struct ConnectionPage {
+    accounts: Vec<Connection>,
+    next: Option<String>,
+}
+pub async fn connections(
+    State(app): State<App>,
+    jar: CookieJar,
+    Path((id, direction)): Path<(Uuid, ConnectionDirection)>,
+    Query(input): Query<ConnectionQuery>,
+) -> Result<Json<ConnectionPage>> {
+    const PAGE_SIZE: usize = 30;
+    let viewer = profile::completed(&app, &jar).await?;
+    let (after_count, after_id) = match input.after {
+        Some(cursor) => {
+            let (count, id) = cursor.split_once(':').ok_or(INVALID)?;
+            let count = count.parse::<i64>().ok().filter(|count| *count >= 0).ok_or(INVALID)?;
+            let id = Uuid::parse_str(id).map_err(|_| INVALID)?;
+            (Some(count), Some(id))
+        }
+        None => (None, None),
+    };
+    let sqlx::types::Json(mut accounts): sqlx::types::Json<Vec<Connection>> =
+        sqlx::query_scalar(include_str!("connections.sql"))
+            .bind(id)
+            .bind(viewer.id)
+            .bind(matches!(direction, ConnectionDirection::Followers))
+            .bind(after_count)
+            .bind(after_id)
+            .bind((PAGE_SIZE + 1) as i64)
+            .fetch_optional(&app.0.db)
+            .await?
+            .ok_or(MISSING)?;
+    let has_more = accounts.len() > PAGE_SIZE;
+    accounts.truncate(PAGE_SIZE);
+    let next = accounts.last().filter(|_| has_more).map(|last| format!("{}:{}", last.followers, last.id));
+    Ok(Json(ConnectionPage { accounts, next }))
+}
 pub async fn block(
     State(app): State<App>,
     jar: CookieJar,

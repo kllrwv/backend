@@ -184,6 +184,7 @@ fn router(app: App) -> Router {
         )
         .route("/api/profile/avatar", get(profile::avatar))
         .route("/api/profiles/{handle}", get(community::view))
+        .route("/api/accounts/{id}/connections/{direction}", get(community::connections))
         .route("/api/accounts/{id}/banner", get(community::banner))
         .route("/api/accounts/{id}/block", post(community::block))
         .route(
